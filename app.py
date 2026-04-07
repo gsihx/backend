@@ -4,7 +4,7 @@ import datetime
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from functools import wraps
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -131,6 +131,18 @@ def update_user_achievements(user_id):
 
 
 # --- МАРШРУТЫ ДЛЯ ЗАДАНИЙ ---
+
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        res = make_response()
+        res.headers.add("Access-Control-Allow-Origin", "*")
+        res.headers.add("Access-Control-Allow-Headers", "*")
+        res.headers.add("Access-Control-Allow-Methods", "*")
+        return res
+
+
+
 
 # ИСПРАВЛЕНО: Изменен метод на GET, чтобы не конфликтовать с добавлением
 @app.route('/api/tasks', methods=['GET'])
