@@ -548,7 +548,8 @@ def get_achievements(current_user_id):
         # ОЧЕНЬ ВАЖНО: возвращаем пустой список, если ничего не нашли
         return jsonify(achievements if achievements else []), 200
     except Exception as e:
-        print(f"Ошибка в achievements: {e}")
+        # Этот принт отправит реальную ошибку в логи Railway
+        print(f"КРИТИЧЕСКАЯ ОШИБКА: {e}")
         return jsonify({"error": str(e)}), 500
 
 
