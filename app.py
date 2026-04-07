@@ -81,7 +81,11 @@ admin.add_view(ModelView(User, db.session, name='Пользователи'))
 
 # --- 4. ПОДКЛЮЧЕНИЕ ЧЕРЕЗ PSYCOPG2 ---
 def get_db_connection():
-    return psycopg2.connect(app.config['SQLALCHEMY_DATABASE_URI'])
+    url = os.getenv('DATABASE_URL')
+    if url:
+        # Очищаем от невидимых символов
+        clean_url = url.replace('\xa0', '').strip().encode('utf-8', 'ignore').decode('utf-8')
+        return psycopg2.connect(clean_url)
 
 def init_db():
     with app.app_context():
