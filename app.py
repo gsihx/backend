@@ -74,7 +74,7 @@ class UserAchievement(db.Model):
     earned_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
 # --- 3. АДМИН-ПАНЕЛЬ (ТЕПЕРЬ БЕЗ КРАСНЫХ ЛИНИЙ) ---
-admin = Admin(app, name='ЕГЭ Панель', url='/admin', base_template='admin/master.html')
+admin = Admin(app, name='ЕГЭ Панель', url='/admin')
 admin.add_view(ModelView(Task, db.session, name='Задачи'))
 admin.add_view(ModelView(Achievement, db.session, name='Достижения'))
 admin.add_view(ModelView(User, db.session, name='Пользователи'))
