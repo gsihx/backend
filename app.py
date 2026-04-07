@@ -51,8 +51,11 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # --- ПОДКЛЮЧЕНИЕ К POSTGRESQL ---
 def get_db_connection():
-    db_url = os.getenv('DATABASE_URL')
-    if db_url:
+    url = os.getenv('DATABASE_URL')
+    if url:
+        url = url.replace('\xa0', '').strip()
+        # 2. На всякий случай кодируем и декодируем обратно в чистый utf-8
+        url = url.encode('utf-8', 'ignore').decode('utf-8')
         return psycopg2.connect(db_url)
     return psycopg2.connect(
         host='localhost',
@@ -61,6 +64,7 @@ def get_db_connection():
         password='jobs22812',
         client_encoding='UTF8'
     )
+    return psycopg2.connect(url)
 
 
 def setup_database():
