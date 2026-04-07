@@ -568,6 +568,25 @@ def get_user_solved_tasks(current_user_id):
         print(f"Ошибка в get_user_solved_tasks: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/debug_db', methods=['GET'])
+def debug_db():
+    try:
+        conn = get_db_connection()
+        # Используем обычный курсор, чтобы не было конфликтов с RealDictCursor
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public'
+        """)
+        # Собираем названия таблиц в простой список
+        tables = [row[0] for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return jsonify({"tables_backend_sees": tables}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/save_exam_result', methods=['POST'])
 @token_required
