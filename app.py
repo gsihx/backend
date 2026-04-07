@@ -6,657 +6,204 @@ from psycopg2.extras import RealDictCursor
 from functools import wraps
 from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
+from flask_sqlalchemy import SQLAlchemy
+from flask_admin import Admin
+from flask_admin.contrib.sqla import ModelView
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
 import threading
 import time
 import requests
 
-
-
 app = Flask(__name__)
-# Разрешаем запросы с фронтенда Vite
-# Измените строку настройки CORS на эту:
+
+# --- 1. НАСТРОЙКИ И КОРС ---
 CORS(app, resources={r"/*": {
     "origins": "*",
     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     "allow_headers": ["Content-Type", "Authorization"]
 }})
 
-# Секретный ключ для JWT (ИСПРАВЛЕНО: config — это словарь)
 app.config['SECRET_KEY'] = 'super-secret-key-6d8f9a2b1c4e7f3g5h1j9k0l-2026'
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql://localhost/ege_db')
-
-db_url = os.getenv('DATABASE_URL')
-if db_url:
-    print(f"DEBUG: DATABASE_URL length is {len(db_url)}")
-    print(f"DEBUG: DATABASE_URL starts with {db_url[:20]}...")
-
-if not db_url:
-    DATABASE_URL = "postgresql://postgres:bploLOleBWHCXDWynoAnFNNnYtcMmtrM@postgres.railway.internal:5432/railway"
-
-engine = create_engine(db_url)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-Base.metadata.create_all(bind=engine)
-
 UPLOAD_FOLDER = 'static/uploads'
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
-
-
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# --- ПОДКЛЮЧЕНИЕ К POSTGRESQL ---
+# Чистим DATABASE_URL от невидимых символов (0xc2 и прочее)
+raw_url = os.getenv('DATABASE_URL', 'postgresql://postgres:bploLOleBWHCXDWynoAnFNNnYtcMmtrM@postgres.railway.internal:5432/railway')
+clean_url = raw_url.replace('\xa0', '').strip().encode('utf-8', 'ignore').decode('utf-8')
+app.config['SQLALCHEMY_DATABASE_URI'] = clean_url
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# --- 2. ИНИЦИАЛИЗАЦИЯ SQLALCHEMY И МОДЕЛИ (ДЛЯ АДМИНКИ) ---
+db = SQLAlchemy(app)
+
+class User(db.Model):
+    __tablename__ = 'users'
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    is_admin = db.Column(db.Boolean, default=False)
+
+class Task(db.Model):
+    __tablename__ = 'tasks'
+    id = db.Column(db.Integer, primary_key=True)
+    subject = db.Column(db.String(100))
+    task_number = db.Column(db.Integer)
+    variant_number = db.Column(db.Integer, default=1)
+    content = db.Column(db.Text)
+    correct_answer = db.Column(db.String(255))
+    image_url = db.Column(db.String(255))
+    explanation = db.Column(db.Text)
+
+class Achievement(db.Model):
+    __tablename__ = 'achievements'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    icon = db.Column(db.Text)
+    requirement_type = db.Column(db.String(50))
+    requirement_value = db.Column(db.Integer)
+
+class UserAchievement(db.Model):
+    __tablename__ = 'user_achievements'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer)
+    achievement_id = db.Column(db.Integer)
+    earned_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+
+# --- 3. АДМИН-ПАНЕЛЬ (ТЕПЕРЬ БЕЗ КРАСНЫХ ЛИНИЙ) ---
+admin = Admin(app, name='ЕГЭ Панель', template_mode='bootstrap3', url='/admin')
+admin.add_view(ModelView(Task, db.session, name='Задачи'))
+admin.add_view(ModelView(Achievement, db.session, name='Достижения'))
+admin.add_view(ModelView(User, db.session, name='Пользователи'))
+
+# --- 4. ПОДКЛЮЧЕНИЕ ЧЕРЕЗ PSYCOPG2 ---
 def get_db_connection():
-    url = os.getenv('DATABASE_URL')
-    if url:
-        url = url.replace('\xa0', '').strip()
-        # 2. На всякий случай кодируем и декодируем обратно в чистый utf-8
-        url = url.encode('utf-8', 'ignore').decode('utf-8')
-        return psycopg2.connect(db_url)
-    return psycopg2.connect(
-        host='localhost',
-        database='ege_platform',
-        user='postgres',
-        password='jobs22812',
-        client_encoding='UTF8'
-    )
-    return psycopg2.connect(url)
+    return psycopg2.connect(app.config['SQLALCHEMY_DATABASE_URI'])
 
-
-def setup_database():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        # Создаем таблицу достижений с полным набором полей
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS achievements (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                description TEXT,
-                icon TEXT,
-                requirement_type VARCHAR(50),
-                requirement_value INTEGER
-            );
-        """)
-
-        # Добавляем колонки, если таблица уже была создана не полностью
-        cur.execute("ALTER TABLE achievements ADD COLUMN IF NOT EXISTS icon TEXT;")
-        cur.execute("ALTER TABLE achievements ADD COLUMN IF NOT EXISTS requirement_type VARCHAR(50);")
-        cur.execute("ALTER TABLE achievements ADD COLUMN IF NOT EXISTS requirement_value INTEGER;")
-
-        # Создаем таблицу связей
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS user_achievements (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER,
-                achievement_id INTEGER,
-                earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-
-        conn.commit()
-        print("База данных успешно настроена!")
-    except Exception as e:
-        print(f"Ошибка при настройке базы: {e}")
-        conn.rollback()
-    finally:
-        cur.close()
-        conn.close()
-
-
+def init_db():
+    with app.app_context():
+        db.create_all()
+        print("База данных готова и таблицы созданы!")
 
 def keep_alive():
     while True:
         try:
-            # Пингуем свой же адрес (или любой роут, который дергает БД)
-            # Замени на свой реальный URL бэкенда
             requests.get("https://backend-production-bf52.up.railway.app/tasks")
             print("Ping: Database is awake!")
-        except Exception as e:
-            print(f"Ping failed: {e}")
-
-        # Интервал 10 минут
+        except: pass
         time.sleep(100)
 
-# --- ДЕКОРАТОРЫ ЗАЩИТЫ ---
+threading.Thread(target=keep_alive, daemon=True).start()
 
+# --- 5. ДЕКОРАТОРЫ ---
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        token = None
-        if 'Authorization' in request.headers:
-            auth_header = request.headers['Authorization']
-            if auth_header.startswith("Bearer "):
-                token = auth_header.split(" ")[1]
-
-        if not token:
-            return jsonify({'message': 'Токен отсутствует!'}), 401
-
+        token = request.headers.get('Authorization', '').replace('Bearer ', '')
+        if not token: return jsonify({'message': 'Токен отсутствует!'}), 401
         try:
-            # ИСПРАВЛЕНО: ключ и алгоритм
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
             current_user_id = data['user_id']
-        except Exception as e:
-            return jsonify({'message': 'Токен недействителен или просрочен!'}), 401
-
+        except: return jsonify({'message': 'Токен недействителен!'}), 401
         return f(current_user_id, *args, **kwargs)
-
     return decorated
-
-threading.Thread(target=keep_alive, daemon=True).start()
 
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        token = None
-        if 'Authorization' in request.headers:
-            auth_header = request.headers['Authorization']
-            if auth_header.startswith("Bearer "):
-                token = auth_header.split(" ")[1]
-
-        if not token:
-            return jsonify({'message': 'Токен отсутствует!'}), 401
-
+        token = request.headers.get('Authorization', '').replace('Bearer ', '')
         try:
-            # ИСПРАВЛЕНО: ключ и алгоритм
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            if not data.get('is_admin'):
-                return jsonify({'message': 'Доступ запрещен: требуются права администратора!'}), 403
+            if not data.get('is_admin'): return jsonify({'message': 'Нужны права админа!'}), 403
             current_user_id = data['user_id']
-        except:
-            return jsonify({'message': 'Токен недействителен!'}), 401
-
+        except: return jsonify({'message': 'Ошибка авторизации!'}), 401
         return f(current_user_id, *args, **kwargs)
-
     return decorated
 
+# --- 6. ТВОИ ОРИГИНАЛЬНЫЕ МАРШРУТЫ ---
 
-def init_db():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        # 1. Создаем таблицу достижений с ПРАВИЛЬНЫМИ колонками
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS achievements (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                description TEXT,
-                icon TEXT,
-                requirement_type VARCHAR(50),
-                requirement_value INTEGER
-            );
-        """)
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.json
+    conn = get_db_connection(); cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE username = %s", (data.get('username'),))
+    if cur.fetchone():
+        conn.close(); return jsonify({'message': 'Пользователь уже существует'}), 409
+    cur.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)",
+                (data.get('username'), generate_password_hash(data.get('password'))))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({'message': 'Регистрация успешна'}), 201
 
-        # 2. Создаем таблицу связей
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS user_achievements (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER,
-                achievement_id INTEGER,
-                earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json
+    conn = get_db_connection(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("SELECT * FROM users WHERE username = %s", (data.get('username'),))
+    user = cur.fetchone(); conn.close()
+    if user and check_password_hash(user['password_hash'], data.get('password')):
+        token = jwt.encode({
+            'user_id': user['id'], 'username': user['username'],
+            'is_admin': bool(user['is_admin']),
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+        }, app.config['SECRET_KEY'], algorithm="HS256")
+        return jsonify({'token': token, 'is_admin': bool(user['is_admin']), 'username': user['username']})
+    return jsonify({'error': 'Неверный вход'}), 401
 
-        # 3. СЕКРЕТНЫЙ ШАГ: Проверяем, есть ли колонка icon (если таблица уже была)
-        # Если её нет — добавляем. Это исправит ошибку UndefinedColumn.
-        cur.execute("ALTER TABLE achievements ADD COLUMN IF NOT EXISTS icon TEXT;")
-        cur.execute("ALTER TABLE achievements ADD COLUMN IF NOT EXISTS requirement_type VARCHAR(50);")
-        cur.execute("ALTER TABLE achievements ADD COLUMN IF NOT EXISTS requirement_value INTEGER;")
-
-        conn.commit()
-        print("База данных успешно инициализирована!")
-    except Exception as e:
-        print(f"Ошибка инициализации БД: {e}")
-        conn.rollback()
-    finally:
-        cur.close()
-        conn.close()
-
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
-
-def update_user_achievements(user_id):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        # Добавляем [0], чтобы получить само число, а не кортеж
-        cur.execute("SELECT COUNT(*) FROM solved_tasks WHERE user_id = %s", (user_id,))
-        total_solved = cur.fetchone()[0]
-
-        cur.execute("SELECT COUNT(*) FROM exam_results WHERE user_id = %s", (user_id,))
-        exams_done = cur.fetchone()[0]
-
-        cur.execute("SELECT id, requirement_type, requirement_value FROM achievements")
-        all_achievements = cur.fetchall()
-
-        for ach in all_achievements:
-            ach_id, req_type, req_val = ach
-            should_award = False
-
-            if req_type == 'total_solved' and total_solved >= req_val:
-                should_award = True
-            elif req_type == 'exams_completed' and exams_done >= req_val:
-                should_award = True
-
-            if should_award:
-                cur.execute("""
-                    INSERT INTO user_achievements (user_id, achievement_id) 
-                    VALUES (%s, %s) ON CONFLICT DO NOTHING
-                """, (user_id, ach_id))
-        conn.commit()
-    except Exception as e:
-        print(f"Ошибка при обновлении достижений: {e}")
-    finally:
-        cur.close()
-        conn.close()
-
-
-# --- МАРШРУТЫ ДЛЯ ЗАДАНИЙ ---
-
-@app.before_request
-def handle_preflight():
-    if request.method == "OPTIONS":
-        res = make_response()
-        res.headers.add("Access-Control-Allow-Origin", "*")
-        res.headers.add("Access-Control-Allow-Headers", "*")
-        res.headers.add("Access-Control-Allow-Methods", "*")
-        return res
-
-
-
-
-# ИСПРАВЛЕНО: Изменен метод на GET, чтобы не конфликтовать с добавлением
 @app.route('/tasks', methods=['GET'])
 def get_tasks():
     subject = request.args.get('subject', 'Все')
     variant = request.args.get('variant', 'Все')
-
-    # ПРОВЕРЬ: Все ли эти колонки есть в твоей таблице PostgreSQL?
-    # Если ты не добавлял image_url или variant_number в БД через pgAdmin, сервер выдаст 500
     query = "SELECT id, subject, variant_number, task_number, content, correct_answer, image_url FROM tasks WHERE 1=1"
     params = []
-
     if subject != 'Все':
-        query += " AND subject = %s"
-        params.append(subject)
+        query += " AND subject = %s"; params.append(subject)
     if variant != 'Все':
-        query += " AND variant_number = %s"
-        params.append(variant)
-
-    # ORDER BY всегда в самом конце!
+        query += " AND variant_number = %s"; params.append(variant)
     query += " ORDER BY task_number ASC"
-
-    try:
-        conn = get_db_connection()
-        # Использование RealDictCursor важно для того, чтобы Vue понимал ключи (id, content и т.д.)
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(query, tuple(params))
-        tasks = cur.fetchall()
-        cur.close()
-        conn.close()
-        return jsonify(tasks)  # Возвращаем список задач
-    except Exception as e:
-        print(f"Критическая ошибка БД: {e}")  # Это появится в консоли PyCharm
-        return jsonify({"error": str(e)}), 500
-    pass
-
-
-@app.route('/admin/tasks', methods=['POST'])
-@admin_required
-def add_Task(current_user_id):
-    try:
-        # Получаем текстовые данные из form-data
-        subject = request.form.get('subject')
-        task_number = request.form.get('task_number')
-        variant_number = request.form.get('variant_number', 1)  # Добавляем получение варианта
-        content = request.form.get('content')
-        correct_answer = request.form.get('correct_answer')
-
-        image_url = None
-
-        # Проверяем, есть ли файл в запросе
-        if 'image' in request.files:
-            file = request.files['image']
-            if file.filename != '':
-                filename = secure_filename(file.filename)
-                # Добавляем уникальный префикс, чтобы имена не дублировались
-                filename = f"{task_number}_{filename}"
-                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                image_url = f"/static/uploads/{filename}"
-
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("""
-                INSERT INTO tasks (subject, task_number, variant_number, content, correct_answer, image_url)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """, (subject, task_number, variant_number, content, correct_answer, image_url))
-        conn.commit()
-
-        return jsonify({"message": "Задача создана"}), 201
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/admin/tasks/<int:task_id>', methods=['PUT'])
-@admin_required
-def admin_update_task(current_user_id, task_id):
-    try:
-        # Используем .form.get, так как Axios отправляет FormData
-        subject = request.form.get('subject')
-        task_number = request.form.get('task_number')
-        variant_number = request.form.get('variant_number')
-        content = request.form.get('content')
-        correct_answer = request.form.get('correct_answer')
-
-        # Отладочный принт в консоль PyCharm, чтобы увидеть, что пришло
-        print(f"DEBUG: {subject}, {task_number}, {variant_number}")
-
-        if not subject or not content:
-            return jsonify({"error": "Поля 'Предмет' и 'Текст' не могут быть пустыми"}), 400
-
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        if 'image' in request.files:
-            file = request.files['image']
-            filename = secure_filename(file.filename)
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-            image_url = f"/static/uploads/{filename}"
-
-            cur.execute("""
-                UPDATE tasks 
-                SET subject=%s, task_number=%s, variant_number=%s, content=%s, correct_answer=%s, image_url=%s
-                WHERE id=%s
-            """, (subject, task_number, variant_number, content, correct_answer, image_url, task_id))
-        else:
-            cur.execute("""
-                UPDATE tasks 
-                SET subject=%s, task_number=%s, variant_number=%s, content=%s, correct_answer=%s
-                WHERE id=%s
-            """, (subject, task_number, variant_number, content, correct_answer, task_id))
-
-        conn.commit()
-        cur.close()
-        conn.close()
-        return jsonify({"message": "Успешно обновлено"}), 200
-    except Exception as e:
-        print(f"Ошибка обновления: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
-
-
-@app.route('/user_exam_history', methods=['GET'])
-@token_required
-def get_exam_history(current_user_id):
-    try:
-        conn = get_db_connection()
-        # Используем RealDictCursor, чтобы данные приходили в виде словаря (json)
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-
-        # Получаем последние 5 результатов экзаменов для текущего пользователя
-        cur.execute("""
-            SELECT subject, score, total_tasks, completed_at 
-            FROM exam_results 
-            WHERE user_id = %s 
-            ORDER BY completed_at DESC LIMIT 5
-        """, (current_user_id,))
-
-        history = cur.fetchall()
-        cur.close()
-        conn.close()
-
-        return jsonify({'history': history}), 200
-    except Exception as e:
-        print(f"Ошибка в get_exam_history: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/tasks', methods=['POST'])
-@admin_required
-def add_task(current_user_id):
-    data = request.json
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO tasks (subject, task_number, content, correct_answer, variant_number, explanation)
-            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
-        """, (data.get('subject'), data.get('number'), data.get('text'),
-              data.get('correct_answer'), data.get('variant_number', 1), data.get('explanation', '')))
-        new_id = cur.fetchone()[0]
-        conn.commit()
-        cur.close()
-        conn.close()
-        return jsonify({"message": "Задание добавлено!", "id": new_id}), 201
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/tasks/<int:task_id>', methods=['PUT'])  # ИСПРАВЛЕНО: Обычно используется PUT для обновления
-@admin_required
-def update_task(current_user_id, task_id):
-    data = request.json
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("""
-            UPDATE tasks 
-            SET subject = %s, task_number = %s, content = %s, correct_answer = %s, variant_number = %s, explanation = %s
-            WHERE id = %s
-        """, (data['subject'], data['task_number'], data['content'], data['correct_answer'],
-              data.get('variant_number', 1), data.get('explanation', ''), task_id))
-        conn.commit()
-        cur.close()
-        conn.close()
-        return jsonify({"message": "Задание обновлено"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/tasks/<int:task_id>', methods=['DELETE'])
-@admin_required
-def delete_task(current_user_id, task_id):
-    conn = None
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        # 1. Сначала удаляем связанные записи в solved_tasks,
-        # иначе база не даст удалить саму задачу
-        cur.execute("DELETE FROM solved_tasks WHERE task_id = %s", (task_id,))
-
-        # 2. Теперь удаляем саму задачу
-        cur.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
-
-        conn.commit()
-        cur.close()
-        conn.close()
-        return jsonify({"message": "Задание и связанные данные удалены"}), 200
-
-    except Exception as e:
-        if conn:
-            conn.rollback()  # Откатываем изменения, если произошла ошибка
-            conn.close()
-        print(f"ОШИБКА УДАЛЕНИЯ: {e}")  # Это появится в терминале PyCharm
-        return jsonify({"error": str(e)}), 500
-
-
-# --- ОСТАЛЬНЫЕ МАРШРУТЫ ---
-
-@app.route('/generate_exam', methods=['GET'])  # ИСПРАВЛЕНО: GET для получения
-def generate_exam():
-    subject = request.args.get('subject', 'Математика')
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    query = """
-        SELECT DISTINCT ON (task_number) id, subject, variant_number, task_number, content 
-        FROM tasks WHERE subject = %s ORDER BY task_number, RANDOM()
-    """
-    cur.execute(query, (subject,))
-    exam_tasks = cur.fetchall()
-    cur.close()
-    conn.close()
-    return jsonify({'tasks': exam_tasks})
-
+    conn = get_db_connection(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(query, tuple(params))
+    tasks = cur.fetchall(); cur.close(); conn.close()
+    return jsonify(tasks)
 
 @app.route('/check_answer', methods=['POST'])
 @token_required
 def check_answer(current_user_id):
     data = request.json
-    task_id = data.get('task_id')
-    user_answer = str(data.get('user_answer', '')).strip().lower()
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT correct_answer FROM tasks WHERE id = %s", (task_id,))
+    conn = get_db_connection(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("SELECT correct_answer FROM tasks WHERE id = %s", (data.get('task_id'),))
     task = cur.fetchone()
-    if not task:
-        conn.close()
-        return jsonify({'error': 'Задача не найдена'}), 404
-
-    is_correct = (user_answer == str(task['correct_answer']).strip().lower())
+    is_correct = str(data.get('user_answer', '')).strip().lower() == str(task['correct_answer']).strip().lower()
     if is_correct:
         cur.execute("INSERT INTO solved_tasks (user_id, task_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                    (current_user_id, task_id))
+                    (current_user_id, data.get('task_id')))
         conn.commit()
-    cur.close()
-    conn.close()
+    cur.close(); conn.close()
     return jsonify({'correct': is_correct})
-
 
 @app.route('/user_achievements', methods=['GET'])
 def get_achievements():
     try:
-        # Твой текущий код здесь...
-        # Например:
-        conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-
-        # Убедись, что SQL-запрос совпадает с именами колонок выше
-        cur.execute("""
-            SELECT a.id, a.name, a.description, a.icon, 
-            (ua.earned_at IS NOT NULL) as earned
-            FROM achievements a
-            LEFT JOIN user_achievements ua ON a.id = ua.achievement_id
-            ORDER BY a.id ASC
-        """)
-
-        data = cur.fetchall()
-        cur.close()
-        conn.close()
+        conn = get_db_connection(); cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("""SELECT a.*, (ua.id IS NOT NULL) as earned FROM achievements a 
+                       LEFT JOIN user_achievements ua ON a.id = ua.achievement_id""")
+        data = cur.fetchall(); cur.close(); conn.close()
         return jsonify(data)
-
-    except Exception as e:
-        # Если что-то упадет, ты увидишь текст ошибки вместо просто "500"
-        return jsonify({"error_details": str(e)}), 500
-
-
-@app.route('/user_solved_tasks', methods=['GET'])
-@token_required
-def get_user_solved_tasks(current_user_id):
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        # Выбираем все ID задач, которые решил этот пользователь
-        cur.execute('SELECT task_id FROM solved_tasks WHERE user_id = %s', (current_user_id,))
-
-        # Превращаем список кортежей [(1,), (5,), (10,)] в простой список [1, 5, 10]
-        rows = cur.fetchall()
-        solved_ids = [row[0] for row in rows]
-
-        cur.close()
-        conn.close()
-
-        return jsonify({'solved_task_ids': solved_ids}), 200
-    except Exception as e:
-        print(f"Ошибка в get_user_solved_tasks: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/debug_db', methods=['GET'])
-def debug_db():
-    try:
-        conn = get_db_connection()
-        # Используем обычный курсор, чтобы не было конфликтов с RealDictCursor
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT table_name 
-            FROM information_schema.tables 
-            WHERE table_schema = 'public'
-        """)
-        # Собираем названия таблиц в простой список
-        tables = [row[0] for row in cur.fetchall()]
-        cur.close()
-        conn.close()
-        return jsonify({"tables_backend_sees": tables}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+    except Exception as e: return jsonify({"error": str(e)}), 500
 
 @app.route('/save_exam_result', methods=['POST'])
 @token_required
-def save_exam_result(current_user_id):
+def save_res(current_user_id):
     data = request.json
-    conn = get_db_connection()
-    cur = conn.cursor()
+    conn = get_db_connection(); cur = conn.cursor()
     cur.execute("INSERT INTO exam_results (user_id, subject, score, total_tasks) VALUES (%s, %s, %s, %s)",
                 (current_user_id, data['subject'], data['score'], data['total']))
-    conn.commit()
-    cur.close()
-    conn.close()
-    return jsonify({'message': 'Результат сохранен'}), 201
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({'status': 'ok'}), 201
 
-
-@app.route('/register', methods=['POST'])
-def register():
-    data = request.json
-    username = data.get('username')
-    password = data.get('password')
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-    if cur.fetchone():
-        conn.close()
-        return jsonify({'message': 'Пользователь уже существует'}), 409
-    hashed_pw = generate_password_hash(password)
-    cur.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)", (username, hashed_pw))
-    conn.commit()
-    cur.close()
-    conn.close()
-    return jsonify({'message': 'Регистрация успешна'}), 201
-
-
-@app.route('/api/login', methods=['POST']) # Убедись, что тут НЕТ слеша в конце
-def login():
-    data = request.json
-    username = data.get('username')
-    password = data.get('password')
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT id, username, password_hash, is_admin FROM users WHERE username = %s", (username,))
-    user = cur.fetchone()
-    conn.close()
-
-    if user and check_password_hash(user['password_hash'], password):
-        token = jwt.encode({
-            'user_id': user['id'],
-            'username': user['username'],
-            'is_admin': bool(user.get('is_admin')),
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
-        }, app.config['SECRET_KEY'], algorithm="HS256")
-
-        return jsonify({
-            'token': token,
-            'is_admin': bool(user.get('is_admin')),
-            'username': user['username']
-        }), 200
-
-    return jsonify({'error': 'Неверный логин или пароль'}), 401
-
-
+# --- 7. ЗАПУСК ---
 if __name__ == '__main__':
-    setup_database()
     init_db()
-    # host='0.0.0.0' заставляет Flask слушать внешние запросы
     app.run(debug=True, host='0.0.0.0', port=5000)
