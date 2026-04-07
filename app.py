@@ -10,6 +10,10 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+import threading
+import time
+import requests
+
 
 
 app = Flask(__name__)
@@ -54,6 +58,18 @@ def get_db_connection():
     )
     return conn
 
+def keep_alive():
+    while True:
+        try:
+            # Пингуем собственный эндпоинт или делаем запрос в БД
+            # Замени на URL своего бэкенда на Railway
+            requests.get("https://backend-production-bf52.up.railway.app/tasks")
+            print("Ping successful: Database is awake!")
+        except Exception as e:
+            print(f"Ping failed: {e}")
+
+        # Спим 10 минут (600 секунд)
+        time.sleep(300)
 
 # --- ДЕКОРАТОРЫ ЗАЩИТЫ ---
 
@@ -80,6 +96,7 @@ def token_required(f):
 
     return decorated
 
+threading.Thread(target=keep_alive, daemon=True).start()
 
 def admin_required(f):
     @wraps(f)
