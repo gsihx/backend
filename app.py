@@ -128,6 +128,47 @@ def admin_required(f):
     return decorated
 
 
+def init_db():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # Создаем таблицу, если её нет вообще
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS achievements (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            icon TEXT,
+            requirement_type VARCHAR(50),
+            requirement_value INTEGER
+        );
+    """)
+    # На всякий случай добавляем колонки, если таблица была старая
+    try:
+        cur.execute("ALTER TABLE achievements ADD COLUMN icon TEXT;")
+    except:
+        conn.rollback()
+
+    try:
+        cur.execute("ALTER TABLE achievements ADD COLUMN requirement_type VARCHAR(50);")
+    except:
+        conn.rollback()
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_achievements (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER,
+            achievement_id INTEGER,
+            earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+# Вызови её перед app.run()
+init_db()
+
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
 def update_user_achievements(user_id):
