@@ -180,7 +180,7 @@ def handle_preflight():
 
 
 # ИСПРАВЛЕНО: Изменен метод на GET, чтобы не конфликтовать с добавлением
-@app.route('/api/tasks', methods=['GET'])
+@app.route('/tasks', methods=['GET'])
 def get_tasks():
     subject = request.args.get('subject', 'Все')
     variant = request.args.get('variant', 'Все')
@@ -215,7 +215,7 @@ def get_tasks():
     pass
 
 
-@app.route('/api/admin/tasks', methods=['POST'])
+@app.route('/admin/tasks', methods=['POST'])
 @admin_required
 def add_Task(current_user_id):
     try:
@@ -251,7 +251,7 @@ def add_Task(current_user_id):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/admin/tasks/<int:task_id>', methods=['PUT'])
+@app.route('/admin/tasks/<int:task_id>', methods=['PUT'])
 @admin_required
 def admin_update_task(current_user_id, task_id):
     try:
@@ -298,7 +298,7 @@ def admin_update_task(current_user_id, task_id):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/user_exam_history', methods=['GET'])
+@app.route('/user_exam_history', methods=['GET'])
 @token_required
 def get_exam_history(current_user_id):
     try:
@@ -323,7 +323,7 @@ def get_exam_history(current_user_id):
         print(f"Ошибка в get_exam_history: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/tasks', methods=['POST'])
+@app.route('/tasks', methods=['POST'])
 @admin_required
 def add_task(current_user_id):
     data = request.json
@@ -344,7 +344,7 @@ def add_task(current_user_id):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/tasks/<int:task_id>', methods=['PUT'])  # ИСПРАВЛЕНО: Обычно используется PUT для обновления
+@app.route('/tasks/<int:task_id>', methods=['PUT'])  # ИСПРАВЛЕНО: Обычно используется PUT для обновления
 @admin_required
 def update_task(current_user_id, task_id):
     data = request.json
@@ -365,7 +365,7 @@ def update_task(current_user_id, task_id):
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/tasks/<int:task_id>', methods=['DELETE'])
+@app.route('/tasks/<int:task_id>', methods=['DELETE'])
 @admin_required
 def delete_task(current_user_id, task_id):
     conn = None
@@ -395,7 +395,7 @@ def delete_task(current_user_id, task_id):
 
 # --- ОСТАЛЬНЫЕ МАРШРУТЫ ---
 
-@app.route('/api/generate_exam', methods=['GET'])  # ИСПРАВЛЕНО: GET для получения
+@app.route('/generate_exam', methods=['GET'])  # ИСПРАВЛЕНО: GET для получения
 def generate_exam():
     subject = request.args.get('subject', 'Математика')
     conn = get_db_connection()
@@ -411,7 +411,7 @@ def generate_exam():
     return jsonify({'tasks': exam_tasks})
 
 
-@app.route('/api/check_answer', methods=['POST'])
+@app.route('/check_answer', methods=['POST'])
 @token_required
 def check_answer(current_user_id):
     data = request.json
@@ -435,7 +435,7 @@ def check_answer(current_user_id):
     return jsonify({'correct': is_correct})
 
 
-@app.route('/api/user_achievements', methods=['GET']) # Убедись, что тут GET
+@app.route('/user_achievements', methods=['GET']) # Убедись, что тут GET
 @token_required
 def get_achievements(current_user_id):
     update_user_achievements(current_user_id)
@@ -453,7 +453,7 @@ def get_achievements(current_user_id):
     return jsonify({'achievements': achievements})
 
 
-@app.route('/api/user_solved_tasks', methods=['GET'])
+@app.route('/user_solved_tasks', methods=['GET'])
 @token_required
 def get_user_solved_tasks(current_user_id):
     try:
@@ -475,7 +475,7 @@ def get_user_solved_tasks(current_user_id):
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/save_exam_result', methods=['POST'])
+@app.route('/save_exam_result', methods=['POST'])
 @token_required
 def save_exam_result(current_user_id):
     data = request.json
