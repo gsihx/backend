@@ -85,7 +85,7 @@ def get_db_connection():
     if url:
         # Очищаем от невидимых символов
         clean_url = url.replace('\xa0', '').strip().encode('utf-8', 'ignore').decode('utf-8')
-        return psycopg2.connect(clean_url)
+        return psycopg2.connect(url)
 
 def init_db():
     with app.app_context():
