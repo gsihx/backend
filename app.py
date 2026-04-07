@@ -49,14 +49,16 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # --- ПОДКЛЮЧЕНИЕ К POSTGRESQL ---
 def get_db_connection():
-    conn = psycopg2.connect(
+    db_url = os.getenv('DATABASE_URL')
+    if db_url:
+        return psycopg2.connect(db_url)
+    return psycopg2.connect(
         host='localhost',
         database='ege_platform',
         user='postgres',
         password='jobs22812',
         client_encoding='UTF8'
     )
-    return conn
 
 def keep_alive():
     while True:
