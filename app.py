@@ -18,12 +18,7 @@ import requests
 app = Flask(__name__)
 
 # --- 1. НАСТРОЙКИ И КОРС ---
-CORS(app, resources={r"/*": {
-    "origins": "*",
-    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    "allow_headers": ["Content-Type", "Authorization"]
-}})
-
+CORS(app, resources={r"/*": {"origins": "*"}})
 app.config['SECRET_KEY'] = 'super-secret-key-6d8f9a2b1c4e7f3g5h1j9k0l-2026'
 UPLOAD_FOLDER = 'static/uploads'
 if not os.path.exists(UPLOAD_FOLDER):
