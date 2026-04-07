@@ -8,6 +8,8 @@ from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
 
 
 app = Flask(__name__)
@@ -21,6 +23,19 @@ CORS(app, resources={r"/*": {
 
 # Секретный ключ для JWT (ИСПРАВЛЕНО: config — это словарь)
 app.config['SECRET_KEY'] = 'super-secret-key-6d8f9a2b1c4e7f3g5h1j9k0l-2026'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql://localhost/ege_db')
+
+DATABASE_URL = os.getenv('DATABASE_URL')
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+if not DATABASE_URL:
+    DATABASE_URL = "postgresql://postgres:password@localhost:5432/ege_db"
+
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+Base.metadata.create_all(bind=engine)
 
 UPLOAD_FOLDER = 'static/uploads'
 if not os.path.exists(UPLOAD_FOLDER):
