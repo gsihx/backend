@@ -66,7 +66,7 @@ def keep_alive():
         try:
             # Пингуем свой же адрес (или любой роут, который дергает БД)
             # Замени на свой реальный URL бэкенда
-            requests.get("https://backend-production-bf52.up.railway.app/api/tasks")
+            requests.get("https://backend-production-bf52.up.railway.app/tasks")
             print("Ping: Database is awake!")
         except Exception as e:
             print(f"Ping failed: {e}")
