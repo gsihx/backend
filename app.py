@@ -60,18 +60,19 @@ def get_db_connection():
         client_encoding='UTF8'
     )
 
+
 def keep_alive():
     while True:
         try:
-            # Пингуем собственный эндпоинт или делаем запрос в БД
-            # Замени на URL своего бэкенда на Railway
-            requests.get("https://backend-production-bf52.up.railway.app/tasks")
-            print("Ping successful: Database is awake!")
+            # Пингуем свой же адрес (или любой роут, который дергает БД)
+            # Замени на свой реальный URL бэкенда
+            requests.get("https://backend-production-bf52.up.railway.app/api/tasks")
+            print("Ping: Database is awake!")
         except Exception as e:
             print(f"Ping failed: {e}")
 
-        # Спим 10 минут (600 секунд)
-        time.sleep(300)
+        # Интервал 10 минут
+        time.sleep(100)
 
 # --- ДЕКОРАТОРЫ ЗАЩИТЫ ---
 
@@ -488,7 +489,7 @@ def save_exam_result(current_user_id):
     return jsonify({'message': 'Результат сохранен'}), 201
 
 
-@app.route('/api/register', methods=['POST'])
+@app.route('/register', methods=['POST'])
 def register():
     data = request.json
     username = data.get('username')
