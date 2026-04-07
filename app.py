@@ -29,14 +29,15 @@ CORS(app, resources={r"/*": {
 app.config['SECRET_KEY'] = 'super-secret-key-6d8f9a2b1c4e7f3g5h1j9k0l-2026'
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql://localhost/ege_db')
 
-DATABASE_URL = os.getenv('DATABASE_URL')
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+db_url = os.getenv('DATABASE_URL')
+if db_url:
+    print(f"DEBUG: DATABASE_URL length is {len(db_url)}")
+    print(f"DEBUG: DATABASE_URL starts with {db_url[:20]}...")
 
-if not DATABASE_URL:
-    DATABASE_URL = "postgresql://postgres:password@localhost:5432/ege_db"
+if not db_url:
+    DATABASE_URL = "postgresql://postgres:bploLOleBWHCXDWynoAnFNNnYtcMmtrM@postgres.railway.internal:5432/railway"
 
-engine = create_engine(DATABASE_URL)
+engine = create_engine(db_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 Base.metadata.create_all(bind=engine)
