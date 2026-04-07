@@ -62,6 +62,48 @@ def get_db_connection():
     )
 
 
+def setup_database():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Создаем таблицу достижений с полным набором полей
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS achievements (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                description TEXT,
+                icon TEXT,
+                requirement_type VARCHAR(50),
+                requirement_value INTEGER
+            );
+        """)
+
+        # Добавляем колонки, если таблица уже была создана не полностью
+        cur.execute("ALTER TABLE achievements ADD COLUMN IF NOT EXISTS icon TEXT;")
+        cur.execute("ALTER TABLE achievements ADD COLUMN IF NOT EXISTS requirement_type VARCHAR(50);")
+        cur.execute("ALTER TABLE achievements ADD COLUMN IF NOT EXISTS requirement_value INTEGER;")
+
+        # Создаем таблицу связей
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_achievements (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER,
+                achievement_id INTEGER,
+                earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+        conn.commit()
+        print("База данных успешно настроена!")
+    except Exception as e:
+        print(f"Ошибка при настройке базы: {e}")
+        conn.rollback()
+    finally:
+        cur.close()
+        conn.close()
+
+
+
 def keep_alive():
     while True:
         try:
@@ -589,6 +631,7 @@ def login():
 
 
 if __name__ == '__main__':
+    setup_database()
     init_db()
     # host='0.0.0.0' заставляет Flask слушать внешние запросы
     app.run(debug=True, host='0.0.0.0', port=5000)
