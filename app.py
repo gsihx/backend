@@ -131,43 +131,43 @@ def admin_required(f):
 def init_db():
     conn = get_db_connection()
     cur = conn.cursor()
-    # Создаем таблицу, если её нет вообще
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS achievements (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
-            description TEXT,
-            icon TEXT,
-            requirement_type VARCHAR(50),
-            requirement_value INTEGER
-        );
-    """)
-    # На всякий случай добавляем колонки, если таблица была старая
     try:
-        cur.execute("ALTER TABLE achievements ADD COLUMN icon TEXT;")
-    except:
+        # 1. Создаем таблицу достижений с ПРАВИЛЬНЫМИ колонками
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS achievements (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                description TEXT,
+                icon TEXT,
+                requirement_type VARCHAR(50),
+                requirement_value INTEGER
+            );
+        """)
+
+        # 2. Создаем таблицу связей
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_achievements (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER,
+                achievement_id INTEGER,
+                earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+        # 3. СЕКРЕТНЫЙ ШАГ: Проверяем, есть ли колонка icon (если таблица уже была)
+        # Если её нет — добавляем. Это исправит ошибку UndefinedColumn.
+        cur.execute("ALTER TABLE achievements ADD COLUMN IF NOT EXISTS icon TEXT;")
+        cur.execute("ALTER TABLE achievements ADD COLUMN IF NOT EXISTS requirement_type VARCHAR(50);")
+        cur.execute("ALTER TABLE achievements ADD COLUMN IF NOT EXISTS requirement_value INTEGER;")
+
+        conn.commit()
+        print("База данных успешно инициализирована!")
+    except Exception as e:
+        print(f"Ошибка инициализации БД: {e}")
         conn.rollback()
-
-    try:
-        cur.execute("ALTER TABLE achievements ADD COLUMN requirement_type VARCHAR(50);")
-    except:
-        conn.rollback()
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS user_achievements (
-            id SERIAL PRIMARY KEY,
-            user_id INTEGER,
-            achievement_id INTEGER,
-            earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-    """)
-    conn.commit()
-    cur.close()
-    conn.close()
-
-
-# Вызови её перед app.run()
-init_db()
+    finally:
+        cur.close()
+        conn.close()
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
@@ -589,5 +589,6 @@ def login():
 
 
 if __name__ == '__main__':
+    init_db()
     # host='0.0.0.0' заставляет Flask слушать внешние запросы
     app.run(debug=True, host='0.0.0.0', port=5000)
