@@ -84,7 +84,7 @@ def get_db_connection():
     url = os.getenv('DATABASE_URL')
     if url:
         # Очищаем от невидимых символов
-        clean_url = url.replace('\xa0', '').strip().encode('utf-8', 'ignore').decode('utf-8')
+        url = url.replace('\xa0', '').strip().encode('utf-8', 'ignore').decode('utf-8')
         return psycopg2.connect(url)
 
 def init_db():
@@ -129,7 +129,7 @@ def admin_required(f):
 
 # --- 6. ТВОИ ОРИГИНАЛЬНЫЕ МАРШРУТЫ ---
 
-@app.route('/register', methods=['POST'])
+@app.route('/api/register', methods=['POST'])
 def register():
     data = request.json
     conn = get_db_connection(); cur = conn.cursor()
