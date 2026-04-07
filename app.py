@@ -527,30 +527,30 @@ def check_answer(current_user_id):
 
 
 @app.route('/user_achievements', methods=['GET'])
-@token_required
-def get_achievements(current_user_id):
+def get_achievements():
     try:
+        # Твой текущий код здесь...
+        # Например:
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
-        # Запрос достижений пользователя
+        # Убедись, что SQL-запрос совпадает с именами колонок выше
         cur.execute("""
-            SELECT a.name, a.description, a.icon_url 
+            SELECT a.id, a.name, a.description, a.icon, 
+            (ua.earned_at IS NOT NULL) as earned
             FROM achievements a
-            JOIN user_achievements ua ON a.id = ua.achievement_id
-            WHERE ua.user_id = %s
-        """, (current_user_id,))
+            LEFT JOIN user_achievements ua ON a.id = ua.achievement_id
+            ORDER BY a.id ASC
+        """)
 
-        achievements = cur.fetchall()
+        data = cur.fetchall()
         cur.close()
         conn.close()
+        return jsonify(data)
 
-        # ОЧЕНЬ ВАЖНО: возвращаем пустой список, если ничего не нашли
-        return jsonify(achievements if achievements else []), 200
     except Exception as e:
-        # Этот принт отправит реальную ошибку в логи Railway
-        print(f"КРИТИЧЕСКАЯ ОШИБКА: {e}")
-        return jsonify({"error": str(e)}), 500
+        # Если что-то упадет, ты увидишь текст ошибки вместо просто "500"
+        return jsonify({"error_details": str(e)}), 500
 
 
 @app.route('/user_solved_tasks', methods=['GET'])
