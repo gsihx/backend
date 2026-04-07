@@ -145,7 +145,7 @@ def handle_preflight():
 
 
 # ИСПРАВЛЕНО: Изменен метод на GET, чтобы не конфликтовать с добавлением
-@app.route('/api/tasks', methods=['GET'])
+@app.route('/tasks', methods=['GET'])
 def get_tasks():
     subject = request.args.get('subject', 'Все')
     variant = request.args.get('variant', 'Все')
@@ -418,7 +418,7 @@ def get_achievements(current_user_id):
     return jsonify({'achievements': achievements})
 
 
-@app.route('/api/user_solved_tasks', methods=['GET'])
+@app.route('/user_solved_tasks', methods=['GET'])
 @token_required
 def get_user_solved_tasks(current_user_id):
     try:
@@ -440,7 +440,7 @@ def get_user_solved_tasks(current_user_id):
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/save_exam_result', methods=['POST'])
+@app.route('/save_exam_result', methods=['POST'])
 @token_required
 def save_exam_result(current_user_id):
     data = request.json
