@@ -45,6 +45,7 @@ UPLOAD_FOLDER = 'static/uploads'
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
+
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # --- ПОДКЛЮЧЕНИЕ К POSTGRESQL ---
@@ -298,6 +299,8 @@ def admin_update_task(current_user_id, task_id):
         return jsonify({"error": str(e)}), 500
 
 
+
+
 @app.route('/user_exam_history', methods=['GET'])
 @token_required
 def get_exam_history(current_user_id):
@@ -435,22 +438,30 @@ def check_answer(current_user_id):
     return jsonify({'correct': is_correct})
 
 
-@app.route('/user_achievements', methods=['GET']) # Убедись, что тут GET
+@app.route('/user_achievements', methods=['GET'])
 @token_required
 def get_achievements(current_user_id):
-    update_user_achievements(current_user_id)
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("""
-        SELECT a.id, a.name, a.description, a.icon, (ua.earned_at IS NOT NULL) as earned
-        FROM achievements a
-        LEFT JOIN user_achievements ua ON a.id = ua.achievement_id AND ua.user_id = %s
-        ORDER BY a.id ASC
-    """, (current_user_id,))
-    achievements = cur.fetchall()
-    cur.close()
-    conn.close()
-    return jsonify({'achievements': achievements})
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        # Запрос достижений пользователя
+        cur.execute("""
+            SELECT a.name, a.description, a.icon_url 
+            FROM achievements a
+            JOIN user_achievements ua ON a.id = ua.achievement_id
+            WHERE ua.user_id = %s
+        """, (current_user_id,))
+
+        achievements = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        # ОЧЕНЬ ВАЖНО: возвращаем пустой список, если ничего не нашли
+        return jsonify(achievements if achievements else []), 200
+    except Exception as e:
+        print(f"Ошибка в achievements: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/user_solved_tasks', methods=['GET'])
