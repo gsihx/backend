@@ -202,8 +202,13 @@ def save_res(current_user_id):
     conn.commit(); cur.close(); conn.close()
     return jsonify({'status': 'ok'}), 201
 
+
 @app.route('/user_solved_tasks', methods=['GET', 'OPTIONS'])
 def get_user_solved_tasks():
+    # Если браузер проверяет CORS (preflight запрос)
+    if request.method == 'OPTIONS':
+        return '', 200
+
     # Заглушка для статистики в Личном кабинете
     return jsonify({
         "solved_count": 0,
