@@ -202,6 +202,16 @@ def save_res(current_user_id):
     conn.commit(); cur.close(); conn.close()
     return jsonify({'status': 'ok'}), 201
 
+@app.route('/user_solved_tasks', methods=['GET', 'OPTIONS'])
+def get_user_solved_tasks():
+    # Заглушка для статистики в Личном кабинете
+    return jsonify({
+        "solved_count": 0,
+        "average_score": 0,
+        "achievements": [],
+        "recent_exams": []
+    }), 200
+
 # --- 7. ЗАПУСК ---
 if __name__ == '__main__':
     init_db()
