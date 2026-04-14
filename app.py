@@ -543,6 +543,18 @@ def reset_and_seed_tasks():
     conn.close()
     return "База задач успешно очищена! Вариант №1 загружен (6 тестовых задач)."
 
+@app.route('/user_stats', methods=['GET'])
+@token_required
+def get_stats(current_user_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # Считаем количество уникальных решенных задач
+    cur.execute("SELECT COUNT(DISTINCT task_id) FROM solved_tasks WHERE user_id = %s", (current_user_id,))
+    count = cur.fetchone()[0]
+    cur.close(); conn.close()
+    return jsonify({'solved_total': count})
+
+
 if __name__ == '__main__':
     app.run(
         host='0.0.0.0',
