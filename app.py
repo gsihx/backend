@@ -157,19 +157,42 @@ def register():
     conn.close()
     return jsonify({'message': 'Регистрация успешна'}), 201
 
+
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.json
-    conn = get_db_connection(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    conn = get_db_connection()
+    # Используем RealDictCursor, чтобы обращаться к полям по именам
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    # --- СИЛОВОЙ ФИКС СТРУКТУРЫ ---
+    # Добавляем колонку is_admin, если её вдруг нет в базе
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;")
+    conn.commit()
+    # ------------------------------
+
     cur.execute("SELECT * FROM users WHERE username = %s", (data.get('username'),))
-    user = cur.fetchone(); conn.close()
+    user = cur.fetchone()
+    cur.close()
+    conn.close()
+
     if user and check_password_hash(user['password_hash'], data.get('password')):
+        # Теперь user['is_admin'] точно существует (как минимум со значением по умолчанию False)
+        is_admin_value = bool(user.get('is_admin', False))
+
         token = jwt.encode({
-            'user_id': user['id'], 'username': user['username'],
-            'is_admin': bool(user['is_admin']),
+            'user_id': user['id'],
+            'username': user['username'],
+            'is_admin': is_admin_value,
             'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
         }, app.config['SECRET_KEY'], algorithm="HS256")
-        return jsonify({'token': token, 'is_admin': bool(user['is_admin']), 'username': user['username']})
+
+        return jsonify({
+            'token': token,
+            'is_admin': is_admin_value,
+            'username': user['username']
+        })
+
     return jsonify({'error': 'Неверный вход'}), 401
 
 @app.route('/tasks', methods=['GET'])
