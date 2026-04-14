@@ -52,36 +52,36 @@ def load_tasks():
 
 
 def create_tables():
-    conn = psycopg2.connect(os.getenv('DATABASE_URL'))
-    cur = conn.cursor()
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
-    # Создаем таблицу пользователей (если её нет)
-    cur.execute("""
+    # 1. Удаляем старую таблицу, чтобы пересоздать её с правильными колонками
+    cursor.execute("DROP TABLE IF EXISTS tasks;")
+
+    # 2. Создаем таблицу в строгом соответствии с твоим load_tasks()
+    cursor.execute('''
+        CREATE TABLE tasks (
+            id SERIAL PRIMARY KEY,
+            content TEXT NOT NULL,
+            subject VARCHAR(100) NOT NULL,
+            correct_answer TEXT NOT NULL,
+            task_number INTEGER NOT NULL,
+            variant_number INTEGER NOT NULL
+        );
+    ''')
+
+    # 3. На всякий случай создаем таблицу пользователей, если её нет
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
             username VARCHAR(50) UNIQUE NOT NULL,
             password VARCHAR(255) NOT NULL
         );
-    """)
-
-    # Создаем таблицу задач (если её нет)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS tasks (
-            id SERIAL PRIMARY KEY,
-            subject VARCHAR(50),
-            variant_number INTEGER,
-            task_number INTEGER,
-            topic TEXT,
-            condition TEXT,
-            answer TEXT,
-            solution TEXT
-        );
-    """)
+    ''')
 
     conn.commit()
-    cur.close()
     conn.close()
-    print("Таблицы успешно созданы или уже существуют!")
+    print("Таблицы успешно пересозданы!")
 
 
 if __name__ == '__main__':
