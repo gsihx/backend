@@ -250,7 +250,7 @@ def get_achievements():
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
-        # --- СИЛОВОЙ ФИКС БАЗЫ (ДОСТИЖЕНИЯ) ---
+        # 1. Создаем таблицы, если их нет
         cur.execute("""
             CREATE TABLE IF NOT EXISTS achievements (
                 id SERIAL PRIMARY KEY,
@@ -268,15 +268,29 @@ def get_achievements():
             );
         """)
         conn.commit()
-        # -------------------------------------
 
+        # 2. НАПОЛНЯЕМ БАЗУ, если она пустая
+        cur.execute("SELECT COUNT(*) FROM achievements")
+        if cur.fetchone()['count'] == 0:
+            cur.execute("""
+                INSERT INTO achievements (name, description, icon, requirement_type, requirement_value) VALUES 
+                ('Первый шаг', 'Решена первая задача', '🎯', 'solved_tasks', 1),
+                ('Стахановец', 'Решено 10 задач суммарно', '⚒️', 'solved_tasks', 10),
+                ('Крепкий орешек', 'Решено 50 задач', '🧠', 'solved_tasks', 50),
+                ('Первый КИМ', 'Завершен первый случайный экзамен', '📄', 'exams_completed', 1),
+                ('Марафонец', 'Завершено 5 полных экзаменов', '🏃', 'exams_completed', 5);
+            """)
+            conn.commit()
+            print("Достижения успешно загружены в базу!")
+
+        # 3. Отдаем достижения на фронтенд
         cur.execute("""SELECT a.*, (ua.id IS NOT NULL) as earned FROM achievements a 
                        LEFT JOIN user_achievements ua ON a.id = ua.achievement_id""")
         data = cur.fetchall()
+
         cur.close()
         conn.close()
 
-        # ВАЖНО: возвращаем словарь с ключом achievements, как ждет фронтенд!
         return jsonify({"achievements": data})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
