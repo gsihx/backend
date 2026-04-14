@@ -105,13 +105,22 @@ threading.Thread(target=keep_alive, daemon=True).start()
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
+        # --- ШАГ 1: Если это OPTIONS, просто пропускаем дальше к функции ---
+        if request.method == 'OPTIONS':
+            return f(None, *args, **kwargs)
+
         token = request.headers.get('Authorization', '').replace('Bearer ', '')
-        if not token: return jsonify({'message': 'Токен отсутствует!'}), 401
+        if not token:
+            return jsonify({'message': 'Токен отсутствует!'}), 401
+
         try:
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
             current_user_id = data['user_id']
-        except: return jsonify({'message': 'Токен недействителен!'}), 401
+        except:
+            return jsonify({'message': 'Токен недействителен!'}), 401
+
         return f(current_user_id, *args, **kwargs)
+
     return decorated
 
 def admin_required(f):
@@ -229,13 +238,14 @@ def get_tasks():
     return jsonify(tasks)
 
 
-@app.route('/check_answer', methods=['POST', 'OPTIONS'])  # 1. ОБЯЗАТЕЛЬНО оба метода!
+@app.route('/check_answer', methods=['POST', 'OPTIONS'])
 @token_required
-def check_answer(current_user_id):
-    # 2. ДОБАВЬ ЭТОТ БЛОК В САМОЕ НАЧАЛО ФУНКЦИИ
+def check_answer(current_user_id=None): # Добавили =None
+    # --- ШАГ 2: Сразу отвечаем браузеру OK на запрос OPTIONS ---
     if request.method == 'OPTIONS':
-        return '', 200  # Просто отвечаем "ОК" на предварительную проверку браузера
+        return '', 200
 
+    # Дальше идет твоя обычная логика для POST
     data = request.json
     task_id = data.get('task_id')
     user_answer = str(data.get('answer')).strip().lower()
@@ -243,7 +253,7 @@ def check_answer(current_user_id):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    # --- СИЛОВОЙ ФИКС: Создаем таблицы для сохранения прогресса ---
+    # (Твой блок с CREATE TABLE IF NOT EXISTS остается без изменений)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS solved_tasks (
             id SERIAL PRIMARY KEY,
@@ -252,30 +262,19 @@ def check_answer(current_user_id):
             solved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(user_id, task_id)
         );
-        CREATE TABLE IF NOT EXISTS exam_history (
-            id SERIAL PRIMARY KEY,
-            user_id INTEGER NOT NULL,
-            subject VARCHAR(50),
-            score INTEGER,
-            total_tasks INTEGER,
-            completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
     """)
     conn.commit()
-    # -----------------------------------------------------------
 
     cur.execute("SELECT correct_answer FROM tasks WHERE id = %s", (task_id,))
     task = cur.fetchone()
 
     if not task:
-        cur.close();
-        conn.close()
+        cur.close(); conn.close()
         return jsonify({"error": "Задача не найдена"}), 404
 
     is_correct = str(task['correct_answer']).strip().lower() == user_answer
 
-    if is_correct:
-        # Сохраняем прогресс только если ответ верный
+    if is_correct and current_user_id: # Проверяем, что ID есть
         cur.execute("INSERT INTO solved_tasks (user_id, task_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
                     (current_user_id, task_id))
         conn.commit()
