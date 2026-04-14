@@ -3,10 +3,8 @@ import psycopg2
 import os
 
 def get_db_connection():
-    # Берем ссылку из переменных Amvera
-    database_url = os.getenv('DATABASE_URL')
-    # Подключаемся напрямую через URL
-    return psycopg2.connect(database_url)
+    # Важно: берем URL из конфига Amvera
+    return psycopg2.connect(os.getenv('DATABASE_URL'))
 
 def load_tasks():
     try:
