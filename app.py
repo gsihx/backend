@@ -93,7 +93,8 @@ def init_db():
 def keep_alive():
     while True:
         try:
-            requests.get("https://backend-production-bf52.up.railway.app/tasks")
+            # Замени на свой адрес в Amvera
+            requests.get("https://ege-api2-gsihx.amvera.io/tasks")
             print("Ping: Database is awake!")
         except: pass
         time.sleep(100)
@@ -253,6 +254,7 @@ def get_user_solved_tasks():
     if request.method == 'OPTIONS':
         return '', 200
 
+
     # Заглушка для статистики в Личном кабинете
     return jsonify({
         "solved_count": 0,
@@ -261,6 +263,16 @@ def get_user_solved_tasks():
         "recent_exams": []
     }), 200
 
+@app.route('/user_exam_history', methods=['GET', 'OPTIONS'])
+def get_user_exam_history():
+    # Отвечаем браузеру, что всё ок (для CORS)
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    # Возвращаем пустую историю, чтобы фронтенд не выдавал ошибку
+    return jsonify({
+        "history": []
+    }), 200
 
 if __name__ == '__main__':
     app.run(
