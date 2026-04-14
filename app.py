@@ -376,20 +376,16 @@ def save_res(current_user_id=None):
         cur.close(); conn.close()
 
 
-@app.route('/user_solved_tasks', methods=['GET'])
+@app.route('/user_solved_tasks', methods=['GET', 'OPTIONS'])
 @token_required
-def get_user_solved(current_user_id):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    # Получаем список всех ID решенных задач
+def get_user_solved(current_user_id=None):
+    if request.method == 'OPTIONS': return '', 200
+    conn = get_db_connection(); cur = conn.cursor()
+    # Считаем уникальные ID задач для этого юзера
     cur.execute("SELECT task_id FROM solved_tasks WHERE user_id = %s", (current_user_id,))
     rows = cur.fetchall()
-    cur.close();
-    conn.close()
-
-    # Возвращаем массив ID: [1, 5, 22]
-    ids = [row[0] for row in rows]
-    return jsonify({"solved_task_ids": ids})
+    cur.close(); conn.close()
+    return jsonify({"solved_task_ids": [row[0] for row in rows]})
 
 @app.route('/user_solved_tasks', methods=['GET', 'OPTIONS'])
 def get_user_solved_tasks():
@@ -432,15 +428,14 @@ def generate_exam(current_user_id=None):
 
 
 @app.route('/user_exam_history', methods=['GET', 'OPTIONS'])
-def get_user_exam_history():
-    # Отвечаем браузеру, что всё ок (для CORS)
-    if request.method == 'OPTIONS':
-        return '', 200
-
-    # Возвращаем пустую историю, чтобы фронтенд не выдавал ошибку
-    return jsonify({
-        "history": []
-    }), 200
+@token_required
+def get_user_history(current_user_id=None):
+    if request.method == 'OPTIONS': return '', 200
+    conn = get_db_connection(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("SELECT * FROM exam_results WHERE user_id = %s ORDER BY completed_at DESC", (current_user_id,))
+    history = cur.fetchall()
+    cur.close(); conn.close()
+    return jsonify({"history": history})
 
 # --- МАРШРУТЫ ДЛЯ АДМИН-ПАНЕЛИ (VUE) ---
 
@@ -501,6 +496,31 @@ def update_task(current_user_id, task_id):
     conn.commit()
     cur.close(); conn.close()
     return jsonify({'message': 'Задача обновлена'}), 200
+
+def init_achievements():
+    conn = get_db_connection(); cur = conn.cursor()
+    # Создаем таблицу, если её нет
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS achievements (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100),
+            description TEXT,
+            requirement_type VARCHAR(50),
+            requirement_value INTEGER
+        );
+    """)
+    # Проверяем, есть ли там хоть что-то
+    cur.execute("SELECT COUNT(*) FROM achievements")
+    if cur.fetchone()[0] == 0:
+        cur.execute("""
+            INSERT INTO achievements (name, description, requirement_type, requirement_value) VALUES 
+            ('Первый шаг', 'Решите 1 задачу', 'solved_tasks', 1),
+            ('Опытный боец', 'Решите 10 задач', 'solved_tasks', 10),
+            ('Мастер ЕГЭ', 'Решите 50 задач', 'solved_tasks', 50)
+        """)
+    conn.commit(); cur.close(); conn.close()
+
+init_achievements() # Запускаем при старте
 
 @app.route('/api/tasks/<int:task_id>', methods=['DELETE'])
 @admin_required
