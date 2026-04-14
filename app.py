@@ -241,8 +241,7 @@ def get_tasks():
 @app.route('/check_answer', methods=['POST', 'OPTIONS'])
 @token_required
 def check_answer(current_user_id=None):
-    if request.method == 'OPTIONS':
-        return '', 200
+    if request.method == 'OPTIONS': return '', 200
 
     data = request.json
     task_id = data.get('task_id')
@@ -251,41 +250,53 @@ def check_answer(current_user_id=None):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    # 1. ГАРАНТИРУЕМ ТАБЛИЦУ
+    # Убеждаемся, что таблица связей юзер-ачивка существует
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS solved_tasks (
+        CREATE TABLE IF NOT EXISTS user_achievements (
             id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL,
-            task_id INTEGER NOT NULL,
-            solved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(user_id, task_id)
+            achievement_id INTEGER NOT NULL,
+            earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, achievement_id)
         );
     """)
-    conn.commit()
 
-    # 2. ПОЛУЧАЕМ ПРАВИЛЬНЫЙ ОТВЕТ
     cur.execute("SELECT correct_answer FROM tasks WHERE id = %s", (task_id,))
     task = cur.fetchone()
-
     if not task:
-        cur.close(); conn.close()
+        cur.close();
+        conn.close()
         return jsonify({"error": "Задача не найдена"}), 404
 
     is_correct = str(task['correct_answer']).strip().lower() == user_answer
 
-    # 3. ЗАПИСЫВАЕМ, ЕСЛИ ВЕРНО
     if is_correct and current_user_id:
-        try:
-            cur.execute(
-                "INSERT INTO solved_tasks (user_id, task_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                (current_user_id, task_id)
-            )
-            conn.commit()
-            print(f"DEBUG: Задача {task_id} сохранена для юзера {current_user_id}")
-        except Exception as e:
-            print(f"DEBUG ERROR: Ошибка записи в solved_tasks: {e}")
+        # 1. Сохраняем задачу
+        cur.execute("INSERT INTO solved_tasks (user_id, task_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                    (current_user_id, task_id))
 
-    cur.close(); conn.close()
+        # 2. СЧИТАЕМ ПРОГРЕСС (сколько всего решено)
+        cur.execute("SELECT COUNT(DISTINCT task_id) FROM solved_tasks WHERE user_id = %s", (current_user_id,))
+        count = cur.fetchone()['count']
+
+        # 3. ПРОВЕРЯЕМ ДОСТИЖЕНИЯ
+        # Берем все ачивки из справочника
+        cur.execute("SELECT id, requirement_value FROM achievements WHERE requirement_type = 'solved_tasks'")
+        all_achs = cur.fetchall()
+
+        for ach in all_achs:
+            if count >= ach['requirement_value']:
+                # Пробуем выдать. Если уже есть, UNIQUE(user_id, achievement_id) не даст создать дубль
+                cur.execute("""
+                    INSERT INTO user_achievements (user_id, achievement_id) 
+                    VALUES (%s, %s) 
+                    ON CONFLICT DO NOTHING
+                """, (current_user_id, ach['id']))
+
+        conn.commit()
+
+    cur.close();
+    conn.close()
     return jsonify({"is_correct": is_correct, "correct_answer": task['correct_answer']})
 
 @app.route('/user_achievements', methods=['GET'])
