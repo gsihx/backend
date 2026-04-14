@@ -251,7 +251,7 @@ def check_answer(current_user_id=None):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    # Гарантируем наличие таблицы для записи прогресса
+    # 1. ГАРАНТИРУЕМ ТАБЛИЦУ
     cur.execute("""
         CREATE TABLE IF NOT EXISTS solved_tasks (
             id SERIAL PRIMARY KEY,
@@ -263,6 +263,7 @@ def check_answer(current_user_id=None):
     """)
     conn.commit()
 
+    # 2. ПОЛУЧАЕМ ПРАВИЛЬНЫЙ ОТВЕТ
     cur.execute("SELECT correct_answer FROM tasks WHERE id = %s", (task_id,))
     task = cur.fetchone()
 
@@ -272,10 +273,17 @@ def check_answer(current_user_id=None):
 
     is_correct = str(task['correct_answer']).strip().lower() == user_answer
 
+    # 3. ЗАПИСЫВАЕМ, ЕСЛИ ВЕРНО
     if is_correct and current_user_id:
-        cur.execute("INSERT INTO solved_tasks (user_id, task_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                    (current_user_id, task_id))
-        conn.commit()
+        try:
+            cur.execute(
+                "INSERT INTO solved_tasks (user_id, task_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                (current_user_id, task_id)
+            )
+            conn.commit()
+            print(f"DEBUG: Задача {task_id} сохранена для юзера {current_user_id}")
+        except Exception as e:
+            print(f"DEBUG ERROR: Ошибка записи в solved_tasks: {e}")
 
     cur.close(); conn.close()
     return jsonify({"is_correct": is_correct, "correct_answer": task['correct_answer']})
@@ -366,6 +374,22 @@ def save_res(current_user_id=None):
         return jsonify({'error': str(e)}), 500
     finally:
         cur.close(); conn.close()
+
+
+@app.route('/user_solved_tasks', methods=['GET'])
+@token_required
+def get_user_solved(current_user_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    # Получаем список всех ID решенных задач
+    cur.execute("SELECT task_id FROM solved_tasks WHERE user_id = %s", (current_user_id,))
+    rows = cur.fetchall()
+    cur.close();
+    conn.close()
+
+    # Возвращаем массив ID: [1, 5, 22]
+    ids = [row[0] for row in rows]
+    return jsonify({"solved_task_ids": ids})
 
 @app.route('/user_solved_tasks', methods=['GET', 'OPTIONS'])
 def get_user_solved_tasks():
