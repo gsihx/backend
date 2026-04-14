@@ -356,16 +356,45 @@ def get_achievements():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/save_exam_result', methods=['POST'])
+@app.route('/save_exam_result', methods=['POST', 'OPTIONS'])
 @token_required
-def save_res(current_user_id):
-    data = request.json
-    conn = get_db_connection(); cur = conn.cursor()
-    cur.execute("INSERT INTO exam_results (user_id, subject, score, total_tasks) VALUES (%s, %s, %s, %s)",
-                (current_user_id, data['subject'], data['score'], data['total']))
-    conn.commit(); cur.close(); conn.close()
-    return jsonify({'status': 'ok'}), 201
+def save_res(current_user_id=None):
+    # 1. Обработка OPTIONS для CORS
+    if request.method == 'OPTIONS':
+        return '', 200
 
+    data = request.json
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        # 2. Автоматическое создание таблицы, если её нет
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS exam_results (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                subject VARCHAR(100),
+                score INTEGER,
+                total_tasks INTEGER,
+                completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        conn.commit()
+
+        # 3. Сохранение результата
+        cur.execute(
+            "INSERT INTO exam_results (user_id, subject, score, total_tasks) VALUES (%s, %s, %s, %s)",
+            (current_user_id, data['subject'], data['score'], data['total'])
+        )
+        conn.commit()
+        return jsonify({'status': 'ok'}), 201
+
+    except Exception as e:
+        print(f"Ошибка при сохранении результата: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        cur.close()
+        conn.close()
 
 @app.route('/user_solved_tasks', methods=['GET', 'OPTIONS'])
 def get_user_solved_tasks():
