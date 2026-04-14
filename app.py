@@ -240,12 +240,11 @@ def get_tasks():
 
 @app.route('/check_answer', methods=['POST', 'OPTIONS'])
 @token_required
-def check_answer(current_user_id=None): # Добавили =None
-    # --- ШАГ 2: Сразу отвечаем браузеру OK на запрос OPTIONS ---
+def check_answer(current_user_id=None):
+    # Ответ для CORS
     if request.method == 'OPTIONS':
         return '', 200
 
-    # Дальше идет твоя обычная логика для POST
     data = request.json
     task_id = data.get('task_id')
     user_answer = str(data.get('answer')).strip().lower()
@@ -253,7 +252,7 @@ def check_answer(current_user_id=None): # Добавили =None
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    # (Твой блок с CREATE TABLE IF NOT EXISTS остается без изменений)
+    # Гарантируем наличие таблиц
     cur.execute("""
         CREATE TABLE IF NOT EXISTS solved_tasks (
             id SERIAL PRIMARY KEY,
@@ -262,30 +261,49 @@ def check_answer(current_user_id=None): # Добавили =None
             solved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(user_id, task_id)
         );
+        CREATE TABLE IF NOT EXISTS user_achievements (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            achievement_id INTEGER NOT NULL,
+            earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, achievement_id)
+        );
     """)
     conn.commit()
 
+    # Проверяем задачу
     cur.execute("SELECT correct_answer FROM tasks WHERE id = %s", (task_id,))
     task = cur.fetchone()
 
     if not task:
-        cur.close(); conn.close()
+        cur.close();
+        conn.close()
         return jsonify({"error": "Задача не найдена"}), 404
 
     is_correct = str(task['correct_answer']).strip().lower() == user_answer
 
-    if is_correct and current_user_id: # Проверяем, что ID есть
+    if is_correct and current_user_id:
+        # 1. Записываем решение
         cur.execute("INSERT INTO solved_tasks (user_id, task_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
                     (current_user_id, task_id))
+
+        # 2. Считаем прогресс для ачивок
+        cur.execute("SELECT COUNT(*) FROM solved_tasks WHERE user_id = %s", (current_user_id,))
+        count = cur.fetchone()['count']
+
+        # 3. Выдаем ачивки (1, 10, 50 задач)
+        cur.execute("SELECT id, requirement_value FROM achievements WHERE requirement_type = 'solved_tasks'")
+        achs = cur.fetchall()
+        for a in achs:
+            if count >= a['requirement_value']:
+                cur.execute(
+                    "INSERT INTO user_achievements (user_id, achievement_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                    (current_user_id, a['id']))
         conn.commit()
 
-    cur.close()
+    cur.close();
     conn.close()
-
-    return jsonify({
-        "is_correct": is_correct,
-        "correct_answer": task['correct_answer']
-    })
+    return jsonify({"is_correct": is_correct, "correct_answer": task['correct_answer']})
 
 @app.route('/user_achievements', methods=['GET'])
 def get_achievements():
@@ -349,6 +367,32 @@ def save_res(current_user_id):
     return jsonify({'status': 'ok'}), 201
 
 
+@app.route('/generate_exam', methods=['GET', 'OPTIONS'])
+@token_required
+def generate_exam(current_user_id=None):  # Не забываем про None для OPTIONS
+    # --- СИЛОВОЙ ФИКС CORS ---
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    subject = request.args.get('subject')
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    # Выбираем по одной случайной задаче каждого номера (с 1 по 27, например)
+    # Используем DISTINCT ON для PostgreSQL, чтобы не было дублей номеров
+    cur.execute("""
+        SELECT DISTINCT ON (task_number) * FROM tasks 
+        WHERE subject = %s 
+        ORDER BY task_number, RANDOM()
+    """, (subject,))
+
+    exam_tasks = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return jsonify(exam_tasks)
+
 @app.route('/user_solved_tasks', methods=['GET', 'OPTIONS'])
 def get_user_solved_tasks():
     # Если браузер проверяет CORS (preflight запрос)
@@ -363,6 +407,31 @@ def get_user_solved_tasks():
         "achievements": [],
         "recent_exams": []
     }), 200
+
+
+@app.route('/generate_exam', methods=['GET', 'OPTIONS'])
+@token_required
+def generate_exam(current_user_id=None):
+    if request.method == 'OPTIONS':
+        return '', 200
+
+    subject = request.args.get('subject')
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    # Берем по одной случайной задаче для каждого существующего номера в базе
+    cur.execute("""
+        SELECT DISTINCT ON (task_number) * FROM tasks 
+        WHERE subject = %s 
+        ORDER BY task_number, RANDOM()
+    """, (subject,))
+
+    tasks = cur.fetchall()
+    cur.close();
+    conn.close()
+    return jsonify(tasks)
+
 
 @app.route('/user_exam_history', methods=['GET', 'OPTIONS'])
 def get_user_exam_history():
