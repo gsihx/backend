@@ -4,7 +4,7 @@ import datetime
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from functools import wraps
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify, make_response, Response
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin
@@ -18,7 +18,11 @@ import requests
 app = Flask(__name__)
 
 # --- 1. НАСТРОЙКИ И КОРС ---
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app, resources={r"/*": {
+    "origins": ["https://ege-frontend-42dq.vercel.app", "http://localhost:5173"],
+    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    "allow_headers": ["Content-Type", "Authorization"]
+}})
 app.config['SECRET_KEY'] = 'super-secret-key-6d8f9a2b1c4e7f3g5h1j9k0l-2026'
 UPLOAD_FOLDER = 'static/uploads'
 if not os.path.exists(UPLOAD_FOLDER):
@@ -136,6 +140,15 @@ def admin_required(f):
     return decorated
 
 # --- 6. ТВОИ ОРИГИНАЛЬНЫЕ МАРШРУТЫ ---
+
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        res = Response()
+        res.headers['Access-Control-Allow-Origin'] = 'https://ege-frontend-42dq.vercel.app'
+        res.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        res.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        return res
 
 @app.route('/api/register', methods=['POST'])
 def register():
