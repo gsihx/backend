@@ -229,11 +229,12 @@ def get_tasks():
     return jsonify(tasks)
 
 
-@app.route('/check_answer', methods=['POST', 'OPTIONS'])
+@app.route('/check_answer', methods=['POST', 'OPTIONS'])  # 1. ОБЯЗАТЕЛЬНО оба метода!
 @token_required
 def check_answer(current_user_id):
+    # 2. ДОБАВЬ ЭТОТ БЛОК В САМОЕ НАЧАЛО ФУНКЦИИ
     if request.method == 'OPTIONS':
-        return '', 200
+        return '', 200  # Просто отвечаем "ОК" на предварительную проверку браузера
 
     data = request.json
     task_id = data.get('task_id')
