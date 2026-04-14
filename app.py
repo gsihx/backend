@@ -367,32 +367,6 @@ def save_res(current_user_id):
     return jsonify({'status': 'ok'}), 201
 
 
-@app.route('/generate_exam', methods=['GET', 'OPTIONS'])
-@token_required
-def generate_exam(current_user_id=None):  # Не забываем про None для OPTIONS
-    # --- СИЛОВОЙ ФИКС CORS ---
-    if request.method == 'OPTIONS':
-        return '', 200
-
-    subject = request.args.get('subject')
-
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-
-    # Выбираем по одной случайной задаче каждого номера (с 1 по 27, например)
-    # Используем DISTINCT ON для PostgreSQL, чтобы не было дублей номеров
-    cur.execute("""
-        SELECT DISTINCT ON (task_number) * FROM tasks 
-        WHERE subject = %s 
-        ORDER BY task_number, RANDOM()
-    """, (subject,))
-
-    exam_tasks = cur.fetchall()
-    cur.close()
-    conn.close()
-
-    return jsonify(exam_tasks)
-
 @app.route('/user_solved_tasks', methods=['GET', 'OPTIONS'])
 def get_user_solved_tasks():
     # Если браузер проверяет CORS (preflight запрос)
