@@ -196,20 +196,36 @@ def login():
 
     return jsonify({'error': 'Неверный вход'}), 401
 
+
 @app.route('/tasks', methods=['GET'])
 def get_tasks():
     subject = request.args.get('subject', 'Все')
     variant = request.args.get('variant', 'Все')
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    # --- СИЛОВОЙ ФИКС БАЗЫ (ЗАДАЧИ) ---
+    cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS image_url VARCHAR(255);")
+    cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS explanation TEXT;")
+    cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS variant_number INTEGER DEFAULT 1;")
+    conn.commit()
+    # ----------------------------------
+
     query = "SELECT id, subject, variant_number, task_number, content, correct_answer, image_url FROM tasks WHERE 1=1"
     params = []
     if subject != 'Все':
-        query += " AND subject = %s"; params.append(subject)
+        query += " AND subject = %s"
+        params.append(subject)
     if variant != 'Все':
-        query += " AND variant_number = %s"; params.append(variant)
+        query += " AND variant_number = %s"
+        params.append(variant)
     query += " ORDER BY task_number ASC"
-    conn = get_db_connection(); cur = conn.cursor(cursor_factory=RealDictCursor)
+
     cur.execute(query, tuple(params))
-    tasks = cur.fetchall(); cur.close(); conn.close()
+    tasks = cur.fetchall()
+    cur.close()
+    conn.close()
     return jsonify(tasks)
 
 @app.route('/check_answer', methods=['POST'])
@@ -227,15 +243,43 @@ def check_answer(current_user_id):
     cur.close(); conn.close()
     return jsonify({'correct': is_correct})
 
+
 @app.route('/user_achievements', methods=['GET'])
 def get_achievements():
     try:
-        conn = get_db_connection(); cur = conn.cursor(cursor_factory=RealDictCursor)
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        # --- СИЛОВОЙ ФИКС БАЗЫ (ДОСТИЖЕНИЯ) ---
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS achievements (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                description TEXT,
+                icon TEXT,
+                requirement_type VARCHAR(50),
+                requirement_value INTEGER
+            );
+            CREATE TABLE IF NOT EXISTS user_achievements (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER,
+                achievement_id INTEGER,
+                earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        conn.commit()
+        # -------------------------------------
+
         cur.execute("""SELECT a.*, (ua.id IS NOT NULL) as earned FROM achievements a 
                        LEFT JOIN user_achievements ua ON a.id = ua.achievement_id""")
-        data = cur.fetchall(); cur.close(); conn.close()
-        return jsonify(data)
-    except Exception as e: return jsonify({"error": str(e)}), 500
+        data = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        # ВАЖНО: возвращаем словарь с ключом achievements, как ждет фронтенд!
+        return jsonify({"achievements": data})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/save_exam_result', methods=['POST'])
 @token_required
