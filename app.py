@@ -130,13 +130,27 @@ def admin_required(f):
 @app.route('/api/register', methods=['POST'])
 def register():
     data = request.json
-    conn = get_db_connection(); cur = conn.cursor()
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # --- СИЛОВОЙ ФИКС БАЗЫ ---
+    # Если колонки password_hash нет, этот запрос её создаст прямо на лету
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);")
+    conn.commit()
+    # -------------------------
+
     cur.execute("SELECT id FROM users WHERE username = %s", (data.get('username'),))
     if cur.fetchone():
-        conn.close(); return jsonify({'message': 'Пользователь уже существует'}), 409
+        cur.close();
+        conn.close()
+        return jsonify({'message': 'Пользователь уже существует'}), 409
+
     cur.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)",
                 (data.get('username'), generate_password_hash(data.get('password'))))
-    conn.commit(); cur.close(); conn.close()
+
+    conn.commit()
+    cur.close()
+    conn.close()
     return jsonify({'message': 'Регистрация успешна'}), 201
 
 @app.route('/api/login', methods=['POST'])
