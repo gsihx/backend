@@ -228,21 +228,64 @@ def get_tasks():
     conn.close()
     return jsonify(tasks)
 
-@app.route('/check_answer', methods=['POST'])
+
+@app.route('/check_answer', methods=['POST', 'OPTIONS'])
 @token_required
 def check_answer(current_user_id):
-    data = request.json
-    conn = get_db_connection(); cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT correct_answer FROM tasks WHERE id = %s", (data.get('task_id'),))
-    task = cur.fetchone()
-    is_correct = str(data.get('user_answer', '')).strip().lower() == str(task['correct_answer']).strip().lower()
-    if is_correct:
-        cur.execute("INSERT INTO solved_tasks (user_id, task_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                    (current_user_id, data.get('task_id')))
-        conn.commit()
-    cur.close(); conn.close()
-    return jsonify({'correct': is_correct})
+    if request.method == 'OPTIONS':
+        return '', 200
 
+    data = request.json
+    task_id = data.get('task_id')
+    user_answer = str(data.get('answer')).strip().lower()
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    # --- СИЛОВОЙ ФИКС: Создаем таблицы для сохранения прогресса ---
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS solved_tasks (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            task_id INTEGER NOT NULL,
+            solved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, task_id)
+        );
+        CREATE TABLE IF NOT EXISTS exam_history (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            subject VARCHAR(50),
+            score INTEGER,
+            total_tasks INTEGER,
+            completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    conn.commit()
+    # -----------------------------------------------------------
+
+    cur.execute("SELECT correct_answer FROM tasks WHERE id = %s", (task_id,))
+    task = cur.fetchone()
+
+    if not task:
+        cur.close();
+        conn.close()
+        return jsonify({"error": "Задача не найдена"}), 404
+
+    is_correct = str(task['correct_answer']).strip().lower() == user_answer
+
+    if is_correct:
+        # Сохраняем прогресс только если ответ верный
+        cur.execute("INSERT INTO solved_tasks (user_id, task_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                    (current_user_id, task_id))
+        conn.commit()
+
+    cur.close()
+    conn.close()
+
+    return jsonify({
+        "is_correct": is_correct,
+        "correct_answer": task['correct_answer']
+    })
 
 @app.route('/user_achievements', methods=['GET'])
 def get_achievements():
