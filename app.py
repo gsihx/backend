@@ -26,7 +26,7 @@ if not os.path.exists(UPLOAD_FOLDER):
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Чистим DATABASE_URL от невидимых символов (0xc2 и прочее)
-raw_url = os.getenv('DATABASE_URL', 'postgresql://postgres:bploLOleBWHCXDWynoAnFNNnYtcMmtrM@postgres.railway.internal:5432/railway')
+raw_url = os.getenv('DATABASE_URL')
 clean_url = raw_url.replace('\xa0', '').strip().encode('utf-8', 'ignore').decode('utf-8')
 app.config['SQLALCHEMY_DATABASE_URI'] = clean_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -219,5 +219,6 @@ def get_user_solved_tasks():
 
 # --- 7. ЗАПУСК ---
 if __name__ == '__main__':
-    init_db()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Используем порт из переменных окружения или 80 по умолчанию
+    port = int(os.environ.get("PORT", 80))
+    app.run(host='0.0.0.0', port=port)
