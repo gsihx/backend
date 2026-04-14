@@ -1,14 +1,12 @@
 import json
 import psycopg2
+import os
 
 def get_db_connection():
-    return psycopg2.connect(
-        host='localhost',
-        database='ege_platform',
-        user='postgres',
-        password='jobs22812',
-        client_encoding='UTF8'
-    )
+    # Берем ссылку из переменных Amvera
+    database_url = os.getenv('DATABASE_URL')
+    # Подключаемся напрямую через URL
+    return psycopg2.connect(database_url)
 
 def load_tasks():
     try:
