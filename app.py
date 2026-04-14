@@ -332,6 +332,76 @@ def get_user_exam_history():
         "history": []
     }), 200
 
+# --- МАРШРУТЫ ДЛЯ АДМИН-ПАНЕЛИ (VUE) ---
+
+@app.route('/api/admin/tasks', methods=['POST'])
+@admin_required
+def add_task(current_user_id):
+    data = request.form
+    image_file = request.files.get('image')
+    image_url = None
+
+    if image_file:
+        filename = secure_filename(image_file.filename)
+        # Добавляем метку времени, чтобы картинки с одинаковыми именами не перезаписывали друг друга
+        unique_name = str(int(time.time())) + "_" + filename
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
+        image_file.save(filepath)
+        image_url = f"/{filepath}"
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO tasks (subject, task_number, variant_number, content, correct_answer, image_url)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    """, (data.get('subject'), data.get('task_number'), data.get('variant_number', 1),
+          data.get('content'), data.get('correct_answer'), image_url))
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({'message': 'Задача успешно создана'}), 201
+
+@app.route('/api/admin/tasks/<int:task_id>', methods=['PUT'])
+@admin_required
+def update_task(current_user_id, task_id):
+    data = request.form
+    image_file = request.files.get('image')
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    # Получаем старую картинку, если новую не загрузили
+    cur.execute("SELECT image_url FROM tasks WHERE id = %s", (task_id,))
+    task = cur.fetchone()
+    image_url = task['image_url'] if task else None
+
+    if image_file:
+        filename = secure_filename(image_file.filename)
+        unique_name = str(int(time.time())) + "_" + filename
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
+        image_file.save(filepath)
+        image_url = f"/{filepath}"
+
+    cur.execute("""
+        UPDATE tasks
+        SET subject = %s, task_number = %s, variant_number = %s,
+            content = %s, correct_answer = %s, image_url = %s
+        WHERE id = %s
+    """, (data.get('subject'), data.get('task_number'), data.get('variant_number', 1),
+          data.get('content'), data.get('correct_answer'), image_url, task_id))
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({'message': 'Задача обновлена'}), 200
+
+@app.route('/api/tasks/<int:task_id>', methods=['DELETE'])
+@admin_required
+def delete_task(current_user_id, task_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({'message': 'Задача удалена'}), 200
+
 if __name__ == '__main__':
     app.run(
         host='0.0.0.0',
