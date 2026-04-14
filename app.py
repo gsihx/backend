@@ -138,6 +138,10 @@ def register():
     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);")
     conn.commit()
     # -------------------------
+    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);")
+    # 2. Снимаем ограничение NOT NULL со старой колонки password, чтобы она не мешала
+    cur.execute("ALTER TABLE users ALTER COLUMN password DROP NOT NULL;")
+    conn.commit()
 
     cur.execute("SELECT id FROM users WHERE username = %s", (data.get('username'),))
     if cur.fetchone():
