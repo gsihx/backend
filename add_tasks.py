@@ -50,5 +50,40 @@ def load_tasks():
     print(f"Успешно добавлено новых задач: {count_added}")
     print(f"Пропущено (уже были в базе): {count_skipped}")
 
+
+def create_tables():
+    conn = psycopg2.connect(os.getenv('DATABASE_URL'))
+    cur = conn.cursor()
+
+    # Создаем таблицу пользователей (если её нет)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(50) UNIQUE NOT NULL,
+            password VARCHAR(255) NOT NULL
+        );
+    """)
+
+    # Создаем таблицу задач (если её нет)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS tasks (
+            id SERIAL PRIMARY KEY,
+            subject VARCHAR(50),
+            variant_number INTEGER,
+            task_number INTEGER,
+            topic TEXT,
+            condition TEXT,
+            answer TEXT,
+            solution TEXT
+        );
+    """)
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    print("Таблицы успешно созданы или уже существуют!")
+
+
 if __name__ == '__main__':
+    create_tables()
     load_tasks()
