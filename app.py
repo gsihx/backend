@@ -33,6 +33,9 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # --- 2. ИНИЦИАЛИЗАЦИЯ SQLALCHEMY И МОДЕЛИ (ДЛЯ АДМИНКИ) ---
 db = SQLAlchemy(app)
+with app.app_context():
+    db.create_all()
+    print("Database tables created successfully!")
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -217,8 +220,6 @@ def get_user_solved_tasks():
         "recent_exams": []
     }), 200
 
-# --- 7. ЗАПУСК ---
+
 if __name__ == '__main__':
-    # Используем порт из переменных окружения или 80 по умолчанию
-    port = int(os.environ.get("PORT", 80))
-    app.run(host='0.0.0.0', port=port)
+    app.run()
