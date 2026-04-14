@@ -241,7 +241,6 @@ def get_tasks():
 @app.route('/check_answer', methods=['POST', 'OPTIONS'])
 @token_required
 def check_answer(current_user_id=None):
-    # Ответ для CORS
     if request.method == 'OPTIONS':
         return '', 200
 
@@ -252,7 +251,7 @@ def check_answer(current_user_id=None):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    # Гарантируем наличие таблиц
+    # Гарантируем наличие таблицы для записи прогресса
     cur.execute("""
         CREATE TABLE IF NOT EXISTS solved_tasks (
             id SERIAL PRIMARY KEY,
@@ -261,48 +260,24 @@ def check_answer(current_user_id=None):
             solved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(user_id, task_id)
         );
-        CREATE TABLE IF NOT EXISTS user_achievements (
-            id SERIAL PRIMARY KEY,
-            user_id INTEGER NOT NULL,
-            achievement_id INTEGER NOT NULL,
-            earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(user_id, achievement_id)
-        );
     """)
     conn.commit()
 
-    # Проверяем задачу
     cur.execute("SELECT correct_answer FROM tasks WHERE id = %s", (task_id,))
     task = cur.fetchone()
 
     if not task:
-        cur.close();
-        conn.close()
+        cur.close(); conn.close()
         return jsonify({"error": "Задача не найдена"}), 404
 
     is_correct = str(task['correct_answer']).strip().lower() == user_answer
 
     if is_correct and current_user_id:
-        # 1. Записываем решение
         cur.execute("INSERT INTO solved_tasks (user_id, task_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
                     (current_user_id, task_id))
-
-        # 2. Считаем прогресс для ачивок
-        cur.execute("SELECT COUNT(*) FROM solved_tasks WHERE user_id = %s", (current_user_id,))
-        count = cur.fetchone()['count']
-
-        # 3. Выдаем ачивки (1, 10, 50 задач)
-        cur.execute("SELECT id, requirement_value FROM achievements WHERE requirement_type = 'solved_tasks'")
-        achs = cur.fetchall()
-        for a in achs:
-            if count >= a['requirement_value']:
-                cur.execute(
-                    "INSERT INTO user_achievements (user_id, achievement_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                    (current_user_id, a['id']))
         conn.commit()
 
-    cur.close();
-    conn.close()
+    cur.close(); conn.close()
     return jsonify({"is_correct": is_correct, "correct_answer": task['correct_answer']})
 
 @app.route('/user_achievements', methods=['GET'])
@@ -359,7 +334,6 @@ def get_achievements():
 @app.route('/save_exam_result', methods=['POST', 'OPTIONS'])
 @token_required
 def save_res(current_user_id=None):
-    # 1. Обработка OPTIONS для CORS
     if request.method == 'OPTIONS':
         return '', 200
 
@@ -368,7 +342,7 @@ def save_res(current_user_id=None):
     cur = conn.cursor()
 
     try:
-        # 2. Автоматическое создание таблицы, если её нет
+        # Создаем таблицу для истории пробников, если её нет
         cur.execute("""
             CREATE TABLE IF NOT EXISTS exam_results (
                 id SERIAL PRIMARY KEY,
@@ -381,20 +355,17 @@ def save_res(current_user_id=None):
         """)
         conn.commit()
 
-        # 3. Сохранение результата
         cur.execute(
             "INSERT INTO exam_results (user_id, subject, score, total_tasks) VALUES (%s, %s, %s, %s)",
             (current_user_id, data['subject'], data['score'], data['total'])
         )
         conn.commit()
         return jsonify({'status': 'ok'}), 201
-
     except Exception as e:
-        print(f"Ошибка при сохранении результата: {e}")
+        print(f"Ошибка сохранения КИМа: {e}")
         return jsonify({'error': str(e)}), 500
     finally:
-        cur.close()
-        conn.close()
+        cur.close(); conn.close()
 
 @app.route('/user_solved_tasks', methods=['GET', 'OPTIONS'])
 def get_user_solved_tasks():
