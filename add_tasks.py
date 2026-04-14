@@ -55,10 +55,10 @@ def create_tables():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # 1. Удаляем старую таблицу, чтобы пересоздать её с правильными колонками
-    cursor.execute("DROP TABLE IF EXISTS tasks;")
+    # ВАЖНО: Удаляем таблицу, чтобы пересоздать её с нужной колонкой 'content'
+    cursor.execute("DROP TABLE IF EXISTS tasks CASCADE;")
 
-    # 2. Создаем таблицу в строгом соответствии с твоим load_tasks()
+    # Создаем заново с правильными именами
     cursor.execute('''
         CREATE TABLE tasks (
             id SERIAL PRIMARY KEY,
@@ -70,7 +70,7 @@ def create_tables():
         );
     ''')
 
-    # 3. На всякий случай создаем таблицу пользователей, если её нет
+    # Таблицу юзеров можно оставить с IF NOT EXISTS, она вроде ок
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
@@ -81,8 +81,7 @@ def create_tables():
 
     conn.commit()
     conn.close()
-    print("Таблицы успешно пересозданы!")
-
+    print("Таблицы ПЕРЕСОЗДАНЫ с правильными колонками!")
 
 if __name__ == '__main__':
     create_tables()
