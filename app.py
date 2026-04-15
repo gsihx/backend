@@ -338,6 +338,7 @@ def get_user_achievements(current_user_id=None):
 
     return jsonify({"achievements": achs})
 
+
 @app.route('/save_exam_result', methods=['POST', 'OPTIONS'])
 @token_required
 def save_res(current_user_id=None):
@@ -346,33 +347,42 @@ def save_res(current_user_id=None):
 
     data = request.json
     conn = get_db_connection()
-    cur = conn.cursor()
+    # Добавил RealDictCursor, чтобы обращаться к результатам по именам колонок
+    from psycopg2.extras import RealDictCursor
+    cur = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
-        # Создаем таблицу для истории пробников, если её нет
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS exam_results (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL,
-                subject VARCHAR(100),
-                score INTEGER,
-                total_tasks INTEGER,
-                completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-        conn.commit()
-
+        # 1. Сохраняем результат КИМа
         cur.execute(
             "INSERT INTO exam_results (user_id, subject, score, total_tasks) VALUES (%s, %s, %s, %s)",
             (current_user_id, data['subject'], data['score'], data['total'])
         )
+
+        # 2. СЧИТАЕМ ПРОГРЕСС (сколько всего КИМов сдал юзер)
+        cur.execute("SELECT COUNT(*) as count FROM exam_results WHERE user_id = %s", (current_user_id,))
+        exam_count = cur.fetchone()['count']
+
+        # 3. ПРОВЕРЯЕМ ДОСТИЖЕНИЯ (только те, что за КИМы)
+        cur.execute("SELECT id, requirement_value FROM achievements WHERE requirement_type = 'exams_solved'")
+        exam_achs = cur.fetchall()
+
+        for ach in exam_achs:
+            if exam_count >= ach['requirement_value']:
+                # Выдаем ачивку (ON CONFLICT DO NOTHING защитит от дубликатов)
+                cur.execute("""
+                    INSERT INTO user_achievements (user_id, achievement_id) 
+                    VALUES (%s, %s) ON CONFLICT DO NOTHING
+                """, (current_user_id, ach['id']))
+
         conn.commit()
         return jsonify({'status': 'ok'}), 201
+
     except Exception as e:
         print(f"Ошибка сохранения КИМа: {e}")
         return jsonify({'error': str(e)}), 500
     finally:
-        cur.close(); conn.close()
+        cur.close()
+        conn.close()
 
 
 @app.route('/user_solved_tasks', methods=['GET', 'OPTIONS'])
