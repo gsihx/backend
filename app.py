@@ -312,56 +312,31 @@ def check_answer(current_user_id=None):
     conn.close()
     return jsonify({"is_correct": is_correct, "correct_answer": task['correct_answer']})
 
-@app.route('/user_achievements', methods=['GET'])
-def get_achievements():
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
 
-        # 1. Создаем таблицы, если их нет
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS achievements (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                description TEXT,
-                icon TEXT,
-                requirement_type VARCHAR(50),
-                requirement_value INTEGER
-            );
-            CREATE TABLE IF NOT EXISTS user_achievements (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER,
-                achievement_id INTEGER,
-                earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-        conn.commit()
+@app.route('/user_achievements', methods=['GET', 'OPTIONS'])
+@token_required
+def get_user_achievements(current_user_id=None):
+    if request.method == 'OPTIONS':
+        return '', 200
 
-        # 2. НАПОЛНЯЕМ БАЗУ, если она пустая
-        cur.execute("SELECT COUNT(*) FROM achievements")
-        if cur.fetchone()['count'] == 0:
-            cur.execute("""
-                INSERT INTO achievements (name, description, icon, requirement_type, requirement_value) VALUES 
-                ('Первый шаг', 'Решена первая задача', '🎯', 'solved_tasks', 1),
-                ('Стахановец', 'Решено 10 задач суммарно', '⚒️', 'solved_tasks', 10),
-                ('Крепкий орешек', 'Решено 50 задач', '🧠', 'solved_tasks', 50),
-                ('Первый КИМ', 'Завершен первый случайный экзамен', '📄', 'exams_completed', 1),
-                ('Марафонец', 'Завершено 5 полных экзаменов', '🏃', 'exams_completed', 5);
-            """)
-            conn.commit()
-            print("Достижения успешно загружены в базу!")
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
 
-        # 3. Отдаем достижения на фронтенд
-        cur.execute("""SELECT a.*, (ua.id IS NOT NULL) as earned FROM achievements a 
-                       LEFT JOIN user_achievements ua ON a.id = ua.achievement_id""")
-        data = cur.fetchall()
+    # Склеиваем все ачивки с прогрессом юзера (LEFT JOIN)
+    cur.execute("""
+        SELECT a.id, a.name, a.description, a.requirement_type, a.requirement_value,
+               CASE WHEN ua.id IS NOT NULL THEN true ELSE false END as earned
+        FROM achievements a
+        LEFT JOIN user_achievements ua 
+               ON a.id = ua.achievement_id AND ua.user_id = %s
+        ORDER BY a.requirement_value ASC
+    """, (current_user_id,))
 
-        cur.close()
-        conn.close()
+    achs = cur.fetchall()
+    cur.close()
+    conn.close()
 
-        return jsonify({"achievements": data})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return jsonify({"achievements": achs})
 
 @app.route('/save_exam_result', methods=['POST', 'OPTIONS'])
 @token_required
@@ -521,28 +496,50 @@ def update_task(current_user_id, task_id):
     cur.close(); conn.close()
     return jsonify({'message': 'Задача обновлена'}), 200
 
+
 def init_achievements():
-    conn = get_db_connection(); cur = conn.cursor()
-    # Создаем таблицу, если её нет
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    # 1. Жесткая очистка забагованных таблиц (удаляем дубликаты)
+    cur.execute("DROP TABLE IF EXISTS user_achievements CASCADE;")
+    cur.execute("DROP TABLE IF EXISTS achievements CASCADE;")
+
+    # 2. Создаем таблицы заново с защитой от дублей (UNIQUE)
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS achievements (
+        CREATE TABLE achievements (
             id SERIAL PRIMARY KEY,
-            name VARCHAR(100),
+            name VARCHAR(100) UNIQUE, -- Вот она, защита от клонирования!
             description TEXT,
             requirement_type VARCHAR(50),
             requirement_value INTEGER
         );
     """)
-    # Проверяем, есть ли там хоть что-то
-    cur.execute("SELECT COUNT(*) FROM achievements")
-    if cur.fetchone()[0] == 0:
-        cur.execute("""
-            INSERT INTO achievements (name, description, requirement_type, requirement_value) VALUES 
-            ('Первый шаг', 'Решите 1 задачу', 'solved_tasks', 1),
-            ('Опытный боец', 'Решите 10 задач', 'solved_tasks', 10),
-            ('Мастер ЕГЭ', 'Решите 50 задач', 'solved_tasks', 50)
-        """)
-    conn.commit(); cur.close(); conn.close()
+
+    cur.execute("""
+        CREATE TABLE user_achievements (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            achievement_id INTEGER NOT NULL,
+            earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, achievement_id)
+        );
+    """)
+
+    # 3. Вставляем чистый эталонный список
+    cur.execute("""
+        INSERT INTO achievements (name, description, requirement_type, requirement_value) VALUES 
+        ('Первый шаг', 'Решена первая задача', 'solved_tasks', 1),
+        ('Стахановец', 'Решено 10 задач суммарно', 'solved_tasks', 10),
+        ('Крепкий орешек', 'Решено 50 задач', 'solved_tasks', 50),
+        ('Первый КИМ', 'Завершен первый случайный экзамен', 'exams_solved', 1),
+        ('Марафонец', 'Завершено 5 полных экзаменов', 'exams_solved', 5)
+        ON CONFLICT (name) DO NOTHING;
+    """)
+
+    conn.commit()
+    cur.close()
+    conn.close()
 
 init_achievements() # Запускаем при старте
 
