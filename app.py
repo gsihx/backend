@@ -150,6 +150,25 @@ def handle_preflight():
         res.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
         return res
 
+
+@app.route('/upgrade_db')
+def upgrade_db():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # Пытаемся добавить колонку для картинок
+        cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS image_url VARCHAR(500);")
+        # Пытаемся добавить колонку для файлов
+        cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS file_url VARCHAR(500);")
+        conn.commit()
+        return "Ура! Колонки image_url и file_url успешно добавлены в базу!", 200
+    except Exception as e:
+        return f"Что-то пошло не так: {e}", 500
+    finally:
+        cur.close()
+        conn.close()
+
+
 @app.route('/api/register', methods=['POST'])
 def register():
     data = request.json
