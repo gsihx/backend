@@ -4,7 +4,7 @@ import datetime
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from functools import wraps
-from flask import Flask, request, jsonify, make_response, Response
+from flask import Flask, request, jsonify, make_response, Response, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_admin import Admin
@@ -462,6 +462,9 @@ def get_user_solved_tasks():
         "recent_exams": []
     }), 200
 
+@app.route('/static/uploads/<path:filename>')
+def serve_uploads(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 @app.route('/generate_exam', methods=['GET', 'OPTIONS'])
 @token_required
