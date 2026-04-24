@@ -284,7 +284,8 @@ def get_tasks():
     conn.commit()
     # ----------------------------------
 
-    query = "SELECT id, subject, variant_number, task_number, content, correct_answer, image_url FROM tasks WHERE 1=1"
+    # Добавили file_url в список SELECT
+    query = "SELECT id, subject, variant_number, task_number, content, correct_answer, image_url, file_url FROM tasks WHERE 1=1"
     params = []
     if subject != 'Все':
         query += " AND subject = %s"
