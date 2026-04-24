@@ -12,6 +12,7 @@ from flask_admin.contrib.sqla import ModelView
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import threading
+import uuid
 import time
 import requests
 
@@ -497,64 +498,89 @@ def get_user_history(current_user_id=None):
 
 # --- МАРШРУТЫ ДЛЯ АДМИН-ПАНЕЛИ (VUE) ---
 
-@app.route('/api/admin/tasks', methods=['POST'])
+@app.route('/api/admin/tasks', methods=['POST', 'OPTIONS'])
+@app.route('/api/admin/tasks/<int:task_id>', methods=['PUT', 'DELETE', 'OPTIONS'])
 @admin_required
-def add_task(current_user_id):
-    data = request.form
-    image_file = request.files.get('image')
-    image_url = None
-
-    if image_file:
-        filename = secure_filename(image_file.filename)
-        # Добавляем метку времени, чтобы картинки с одинаковыми именами не перезаписывали друг друга
-        unique_name = str(int(time.time())) + "_" + filename
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
-        image_file.save(filepath)
-        image_url = f"/{filepath}"
+def admin_tasks_handler(current_user_id=None, task_id=None):
+    if request.method == 'OPTIONS':
+        return '', 200
 
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO tasks (subject, task_number, variant_number, content, correct_answer, image_url)
-        VALUES (%s, %s, %s, %s, %s, %s)
-    """, (data.get('subject'), data.get('task_number'), data.get('variant_number', 1),
-          data.get('content'), data.get('correct_answer'), image_url))
-    conn.commit()
-    cur.close(); conn.close()
-    return jsonify({'message': 'Задача успешно создана'}), 201
 
-@app.route('/api/admin/tasks/<int:task_id>', methods=['PUT'])
-@admin_required
-def update_task(current_user_id, task_id):
-    data = request.form
-    image_file = request.files.get('image')
+    # --- УДАЛЕНИЕ ЗАДАЧИ ---
+    if request.method == 'DELETE':
+        try:
+            cur.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
+            conn.commit()
+            return jsonify({"status": "deleted"}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+        finally:
+            cur.close(); conn.close()
 
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
+    # --- ДОБАВЛЕНИЕ И ОБНОВЛЕНИЕ ЗАДАЧИ ---
+    if request.method in ['POST', 'PUT']:
+        try:
+            # Получаем текст из FormData
+            subject = request.form.get('subject')
+            task_number = request.form.get('task_number')
+            variant_number = request.form.get('variant_number', 1)
+            content = request.form.get('content')
+            correct_answer = request.form.get('correct_answer')
 
-    # Получаем старую картинку, если новую не загрузили
-    cur.execute("SELECT image_url FROM tasks WHERE id = %s", (task_id,))
-    task = cur.fetchone()
-    image_url = task['image_url'] if task else None
+            image_url = None
+            file_url = None
 
-    if image_file:
-        filename = secure_filename(image_file.filename)
-        unique_name = str(int(time.time())) + "_" + filename
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
-        image_file.save(filepath)
-        image_url = f"/{filepath}"
+            # Если мы РЕДАКТИРУЕМ задачу, нужно достать старые ссылки
+            if request.method == 'PUT':
+                cur.execute("SELECT image_url, file_url FROM tasks WHERE id = %s", (task_id,))
+                existing = cur.fetchone()
+                if existing:
+                    image_url = existing[0]
+                    file_url = existing[1]
 
-    cur.execute("""
-        UPDATE tasks
-        SET subject = %s, task_number = %s, variant_number = %s,
-            content = %s, correct_answer = %s, image_url = %s
-        WHERE id = %s
-    """, (data.get('subject'), data.get('task_number'), data.get('variant_number', 1),
-          data.get('content'), data.get('correct_answer'), image_url, task_id))
-    conn.commit()
-    cur.close(); conn.close()
-    return jsonify({'message': 'Задача обновлена'}), 200
+            # Сохраняем ИЗОБРАЖЕНИЕ
+            if 'image' in request.files:
+                img_file = request.files['image']
+                if img_file.filename != '':
+                    filename = secure_filename(img_file.filename)
+                    unique_name = f"img_{uuid.uuid4().hex[:6]}_{filename}"
+                    save_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
+                    img_file.save(save_path)
+                    image_url = f"/{UPLOAD_FOLDER}/{unique_name}"
 
+            # Сохраняем ДОКУМЕНТ (для Информатики)
+            if 'document' in request.files:
+                doc_file = request.files['document']
+                if doc_file.filename != '':
+                    filename = secure_filename(doc_file.filename)
+                    unique_name = f"doc_{uuid.uuid4().hex[:6]}_{filename}"
+                    save_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
+                    doc_file.save(save_path)
+                    file_url = f"/{UPLOAD_FOLDER}/{unique_name}"
+
+            # Запись в базу данных
+            if request.method == 'POST':
+                cur.execute("""
+                    INSERT INTO tasks (subject, task_number, variant_number, content, correct_answer, image_url, file_url)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (subject, task_number, variant_number, content, correct_answer, image_url, file_url))
+            else: # PUT (Обновление)
+                cur.execute("""
+                    UPDATE tasks
+                    SET subject=%s, task_number=%s, variant_number=%s, content=%s, correct_answer=%s, image_url=%s, file_url=%s
+                    WHERE id=%s
+                """, (subject, task_number, variant_number, content, correct_answer, image_url, file_url, task_id))
+
+            conn.commit()
+            return jsonify({"status": "success"}), 200
+
+        except Exception as e:
+            print("Ошибка сохранения:", e)
+            return jsonify({"error": str(e)}), 500
+        finally:
+            cur.close(); conn.close()
 
 def init_achievements():
     conn = get_db_connection()
@@ -602,15 +628,6 @@ def init_achievements():
 
 init_achievements() # Запускаем при старте
 
-@app.route('/api/tasks/<int:task_id>', methods=['DELETE'])
-@admin_required
-def delete_task(current_user_id, task_id):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
-    conn.commit()
-    cur.close(); conn.close()
-    return jsonify({'message': 'Задача удалена'}), 200
 
 @app.route('/make_me_admin')
 def make_admin():
