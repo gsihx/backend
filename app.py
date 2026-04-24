@@ -28,7 +28,7 @@ UPLOAD_FOLDER = 'static/uploads'
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # Чистим DATABASE_URL от невидимых символов (0xc2 и прочее)
 raw_url = os.getenv('DATABASE_URL')
 clean_url = raw_url.replace('\xa0', '').strip().encode('utf-8', 'ignore').decode('utf-8')
@@ -168,6 +168,36 @@ def upgrade_db():
         cur.close()
         conn.close()
 
+
+@app.route('/admin/upload_task_file/<int:task_id>', methods=['POST'])
+@token_required
+def upload_file(current_user_id, task_id):
+    if 'file' not in request.files:
+        return jsonify({"error": "Файл не найден"}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "Имя файла пустое"}), 400
+
+    if file:
+        # Очищаем имя файла от лишних символов
+        filename = secure_filename(file.filename)
+        # Добавляем ID задачи к имени, чтобы файлы не перезаписывались
+        save_path = os.path.join(app.config['UPLOAD_FOLDER'], f"task_{task_id}_{filename}")
+        file.save(save_path)
+
+        # Ссылка, которую мы запишем в БД (относительный путь)
+        file_url = f"/static/uploads/task_{task_id}_{filename}"
+
+        # Обновляем базу данных
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE tasks SET file_url = %s WHERE id = %s", (file_url, task_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"message": "Файл успешно загружен", "url": file_url}), 200
 
 @app.route('/api/register', methods=['POST'])
 def register():
