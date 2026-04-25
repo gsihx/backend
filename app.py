@@ -14,6 +14,7 @@ from werkzeug.utils import secure_filename
 import threading
 import uuid
 import time
+import json
 import requests
 
 app = Flask(__name__)
@@ -158,14 +159,10 @@ def upgrade_db():
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # Пытаемся добавить колонку для картинок
-        cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS image_url VARCHAR(500);")
-        # Пытаемся добавить колонку для файлов
-        cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS file_url VARCHAR(500);")
-        cur.execute("ALTER TABLE tasks ADD COLUMN extra_images TEXT DEFAULT '[]';")
-        cur.execute("ALTER TABLE tasks ADD COLUMN extra_files TEXT DEFAULT '[]';")
+        cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS extra_images TEXT DEFAULT '[]';")
+        cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS extra_files TEXT DEFAULT '[]';")
         conn.commit()
-        return "Ура! Колонки image_url и file_url успешно добавлены в базу!", 200
+        return "Ура! Колонки extra_images и extra_files успешно добавлены в базу!", 200
     except Exception as e:
         return f"Что-то пошло не так: {e}", 500
     finally:
@@ -288,7 +285,7 @@ def get_tasks():
     # ----------------------------------
 
     # Добавили file_url в список SELECT
-    query = "SELECT id, subject, variant_number, task_number, content, correct_answer, image_url, file_url FROM tasks WHERE 1=1"
+    query = "SELECT id, subject, variant_number, task_number, content, correct_answer, image_url, file_url, extra_images, extra_files FROM tasks WHERE 1=1"
     params = []
     if subject != 'Все':
         query += " AND subject = %s"
@@ -524,7 +521,8 @@ def admin_tasks_handler(current_user_id=None, task_id=None):
         except Exception as e:
             return jsonify({"error": str(e)}), 500
         finally:
-            cur.close(); conn.close()
+            cur.close();
+            conn.close()
 
     # --- ДОБАВЛЕНИЕ И ОБНОВЛЕНИЕ ЗАДАЧИ ---
     if request.method in ['POST', 'PUT']:
@@ -536,49 +534,65 @@ def admin_tasks_handler(current_user_id=None, task_id=None):
             content = request.form.get('content')
             correct_answer = request.form.get('correct_answer')
 
+            # Старые поля для совместимости с прошлыми задачами
             image_url = None
             file_url = None
 
+            # НОВЫЕ ПОЛЯ (массивы в формате JSON)
+            extra_images_json = '[]'
+            extra_files_json = '[]'
+
             # Если мы РЕДАКТИРУЕМ задачу, нужно достать старые ссылки
             if request.method == 'PUT':
-                cur.execute("SELECT image_url, file_url FROM tasks WHERE id = %s", (task_id,))
+                cur.execute("SELECT image_url, file_url, extra_images, extra_files FROM tasks WHERE id = %s",
+                            (task_id,))
                 existing = cur.fetchone()
                 if existing:
                     image_url = existing[0]
                     file_url = existing[1]
+                    extra_images_json = existing[2] if existing[2] else '[]'
+                    extra_files_json = existing[3] if existing[3] else '[]'
 
-            # Сохраняем ИЗОБРАЖЕНИЕ
-            if 'image' in request.files:
-                img_file = request.files['image']
-                if img_file.filename != '':
+            # 1. Сохраняем НОВЫЙ МАССИВ ИЗОБРАЖЕНИЙ
+            files_img = request.files.getlist('images')
+            if files_img and files_img[0].filename != '':
+                image_urls = []
+                for img_file in files_img:
                     filename = secure_filename(img_file.filename)
                     unique_name = f"img_{uuid.uuid4().hex[:6]}_{filename}"
                     save_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
                     img_file.save(save_path)
-                    image_url = f"/{UPLOAD_FOLDER}/{unique_name}"
+                    image_urls.append(f"/{UPLOAD_FOLDER}/{unique_name}")
+                extra_images_json = json.dumps(image_urls)  # Превращаем список в строку
 
-            # Сохраняем ДОКУМЕНТ (для Информатики)
-            if 'document' in request.files:
-                doc_file = request.files['document']
-                if doc_file.filename != '':
+            # 2. Сохраняем НОВЫЙ МАССИВ ДОКУМЕНТОВ
+            files_doc = request.files.getlist('documents')
+            if files_doc and files_doc[0].filename != '':
+                file_urls = []
+                for doc_file in files_doc:
                     filename = secure_filename(doc_file.filename)
                     unique_name = f"doc_{uuid.uuid4().hex[:6]}_{filename}"
                     save_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
                     doc_file.save(save_path)
-                    file_url = f"/{UPLOAD_FOLDER}/{unique_name}"
+                    file_urls.append(f"/{UPLOAD_FOLDER}/{unique_name}")
+                extra_files_json = json.dumps(file_urls)
 
             # Запись в базу данных
             if request.method == 'POST':
                 cur.execute("""
-                    INSERT INTO tasks (subject, task_number, variant_number, content, correct_answer, image_url, file_url)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (subject, task_number, variant_number, content, correct_answer, image_url, file_url))
-            else: # PUT (Обновление)
+                    INSERT INTO tasks (subject, task_number, variant_number, content, correct_answer, image_url, file_url, extra_images, extra_files)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                subject, task_number, variant_number, content, correct_answer, image_url, file_url, extra_images_json,
+                extra_files_json))
+            else:  # PUT (Обновление)
                 cur.execute("""
                     UPDATE tasks
-                    SET subject=%s, task_number=%s, variant_number=%s, content=%s, correct_answer=%s, image_url=%s, file_url=%s
+                    SET subject=%s, task_number=%s, variant_number=%s, content=%s, correct_answer=%s, image_url=%s, file_url=%s, extra_images=%s, extra_files=%s
                     WHERE id=%s
-                """, (subject, task_number, variant_number, content, correct_answer, image_url, file_url, task_id))
+                """, (
+                subject, task_number, variant_number, content, correct_answer, image_url, file_url, extra_images_json,
+                extra_files_json, task_id))
 
             conn.commit()
             return jsonify({"status": "success"}), 200
@@ -587,7 +601,8 @@ def admin_tasks_handler(current_user_id=None, task_id=None):
             print("Ошибка сохранения:", e)
             return jsonify({"error": str(e)}), 500
         finally:
-            cur.close(); conn.close()
+            cur.close();
+            conn.close()
 
 def init_achievements():
     conn = get_db_connection()
