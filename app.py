@@ -30,6 +30,7 @@ if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 # Чистим DATABASE_URL от невидимых символов (0xc2 и прочее)
 raw_url = os.getenv('DATABASE_URL')
 clean_url = raw_url.replace('\xa0', '').strip().encode('utf-8', 'ignore').decode('utf-8')
@@ -161,6 +162,8 @@ def upgrade_db():
         cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS image_url VARCHAR(500);")
         # Пытаемся добавить колонку для файлов
         cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS file_url VARCHAR(500);")
+        cur.execute("ALTER TABLE tasks ADD COLUMN extra_images TEXT DEFAULT '[]';")
+        cur.execute("ALTER TABLE tasks ADD COLUMN extra_files TEXT DEFAULT '[]';")
         conn.commit()
         return "Ура! Колонки image_url и file_url успешно добавлены в базу!", 200
     except Exception as e:
