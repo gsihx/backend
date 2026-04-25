@@ -464,7 +464,7 @@ def get_user_solved_tasks():
 
 @app.route('/static/uploads/<path:filename>')
 def serve_uploads(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename, as_attachment=True)
 
 @app.route('/generate_exam', methods=['GET', 'OPTIONS'])
 @token_required
